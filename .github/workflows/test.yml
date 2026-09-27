@@ -1,0 +1,65 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Host tests
+        run: python -m unittest discover -s Tools/tests -v
+      - name: Python compile check
+        run: python -m compileall -q Tools/chatgpt_plura_host Tools/chatgpt-plura-host.py Tools/tests
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build iOS simulator app
+        run: >-
+          xcodebuild -project "ChatGPT Plura — A multi-profile client.xcodeproj"
+          -scheme "ChatGPT Plura — A multi-profile client"
+          -sdk iphonesimulator
+          -configuration Debug
+          -derivedDataPath /tmp/ChatGPTPluraCI
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Verify private-overlay ATS policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find /tmp/ChatGPTPluraCI/Build/Products/Debug-iphonesimulator -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          test -d "$APP"
+          test "$(plutil -extract NSAppTransportSecurity.NSAllowsArbitraryLoads raw -o - "$APP/Info.plist")" = "true"
+      - name: Run iOS unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$({ xcrun simctl list devices available -j; } | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          devices = [
+              device
+              for runtime in data["devices"].values()
+              for device in runtime
+              if device.get("isAvailable") and device.get("name", "").startswith("iPhone")
+          ]
+          if not devices:
+              raise SystemExit("no available iPhone simulator")
+          print(devices[0]["udid"])
+          ')"
+          xcodebuild \
+            -project "ChatGPT Plura — A multi-profile client.xcodeproj" \
+            -scheme "ChatGPT Plura — A multi-profile client" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            test -only-testing:ChatGPTPluraTests

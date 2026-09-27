@@ -1,0 +1,35 @@
+# Local build/test artifacts
+.derivedData/
+DerivedData/
+simulator-*.png
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+*.xcconfig.local
+*.local.xcconfig
+
+# Xcode user-local state
+xcuserdata/
+*.xcuserstate
+
+# Local agent/work-state documents
+AGENTS.md
+STATE.md
+MILESTONES.md
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*~

@@ -1,0 +1,15 @@
+{
+  "originHash" : "76e369c9b4a1c28cbaaab292e5b06a5ff4efdf6a3b2bde5901c84615c459b621",
+  "pins" : [
+    {
+      "identity" : "iosmath",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kostub/iosMath.git",
+      "state" : {
+        "revision" : "838cddc01fdd67efd530f8bb67959ad2715f9b06",
+        "version" : "2.5.0"
+      }
+    }
+  ],
+  "version" : 3
+}
