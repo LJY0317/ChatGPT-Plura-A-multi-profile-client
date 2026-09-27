@@ -2,6 +2,48 @@ import XCTest
 @testable import ChatGPT_Plura___A_multi_profile_client
 
 final class RemoteEndpointPolicyTests: XCTestCase {
+#if DEBUG
+    func testLaunchAutomationUsesEnvironmentFallback() {
+        let configuration = RemoteLaunchAutomationConfiguration(
+            arguments: ["Plura Mobile"],
+            environment: [
+                "PLURA_REMOTE_CONNECT_ON_LAUNCH": "1",
+                "PLURA_REMOTE_SERVER_URL": "ws://100.64.0.1:8766",
+                "PLURA_REMOTE_TARGET_ID": "target-2",
+                "PLURA_REMOTE_PAIRING_BOOTSTRAP_FILE": "bootstrap.txt"
+            ]
+        )
+
+        XCTAssertTrue(configuration.requested)
+        XCTAssertEqual(configuration.serverURL, "ws://100.64.0.1:8766")
+        XCTAssertEqual(configuration.targetID, "target-2")
+        XCTAssertEqual(configuration.bootstrapFilename, "bootstrap.txt")
+    }
+
+    func testLaunchAutomationArgumentsOverrideEnvironmentFallback() {
+        let configuration = RemoteLaunchAutomationConfiguration(
+            arguments: [
+                "Plura Mobile",
+                "--remote-connect-on-launch",
+                "--remote-server-url", "ws://127.0.0.1:8767",
+                "--remote-target-id", "argument-target",
+                "--remote-pairing-bootstrap-file", "argument-bootstrap.txt"
+            ],
+            environment: [
+                "PLURA_REMOTE_CONNECT_ON_LAUNCH": "1",
+                "PLURA_REMOTE_SERVER_URL": "ws://environment:8766",
+                "PLURA_REMOTE_TARGET_ID": "environment-target",
+                "PLURA_REMOTE_PAIRING_BOOTSTRAP_FILE": "environment-bootstrap.txt"
+            ]
+        )
+
+        XCTAssertTrue(configuration.requested)
+        XCTAssertEqual(configuration.serverURL, "ws://127.0.0.1:8767")
+        XCTAssertEqual(configuration.targetID, "argument-target")
+        XCTAssertEqual(configuration.bootstrapFilename, "argument-bootstrap.txt")
+    }
+#endif
+
     func testPresentationSnapshotPersistsBoundedOfflineState() throws {
         let target = try JSONDecoder().decode(
             RemoteTarget.self,

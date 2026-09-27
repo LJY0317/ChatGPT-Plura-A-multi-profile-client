@@ -1,20 +1,50 @@
 import Foundation
 
+#if DEBUG
+struct RemoteLaunchAutomationConfiguration: Equatable {
+    let requested: Bool
+    let targetID: String?
+    let serverURL: String?
+    let bootstrapFilename: String?
+
+    init(arguments: [String], environment: [String: String]) {
+        requested = arguments.contains("--remote-connect-on-launch")
+            || environment["PLURA_REMOTE_CONNECT_ON_LAUNCH"] == "1"
+        targetID = Self.argumentValue("--remote-target-id", in: arguments)
+            ?? environment["PLURA_REMOTE_TARGET_ID"]
+        serverURL = Self.argumentValue("--remote-server-url", in: arguments)
+            ?? environment["PLURA_REMOTE_SERVER_URL"]
+        bootstrapFilename = Self.argumentValue("--remote-pairing-bootstrap-file", in: arguments)
+            ?? environment["PLURA_REMOTE_PAIRING_BOOTSTRAP_FILE"]
+    }
+
+    private static func argumentValue(_ name: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: name) else { return nil }
+        let valueIndex = arguments.index(after: index)
+        guard valueIndex < arguments.endIndex else { return nil }
+        return arguments[valueIndex]
+    }
+}
+#endif
+
 extension RemoteCodexStore {
     func runLaunchAutomationIfRequested() async {
 #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("--remote-connect-on-launch") else { return }
+        let configuration = RemoteLaunchAutomationConfiguration(
+            arguments: ProcessInfo.processInfo.arguments,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard configuration.requested else { return }
 
-        if let targetID = launchArgumentValue("--remote-target-id", in: arguments), !targetID.isEmpty {
+        if let targetID = configuration.targetID, !targetID.isEmpty {
             selectedTargetID = targetID
         }
-        if let url = launchArgumentValue("--remote-server-url", in: arguments), !url.isEmpty {
+        if let url = configuration.serverURL, !url.isEmpty {
             serverURL = url
         }
 
         if capabilityToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !(await bootstrapPairingIfRequested(arguments)) {
+           !(await bootstrapPairingIfRequested(filename: configuration.bootstrapFilename)) {
             diagnostics.record("launchAutomation.remoteConnect.aborted", level: .warning, fields: [
                 "reason": "pairingUnavailable"
             ])
@@ -30,9 +60,8 @@ extension RemoteCodexStore {
     }
 
 #if DEBUG
-    private func bootstrapPairingIfRequested(_ arguments: [String]) async -> Bool {
-        guard let filename = launchArgumentValue("--remote-pairing-bootstrap-file", in: arguments),
-              !filename.isEmpty
+    private func bootstrapPairingIfRequested(filename: String?) async -> Bool {
+        guard let filename, !filename.isEmpty
         else { return false }
 
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -84,11 +113,5 @@ extension RemoteCodexStore {
         }
     }
 
-    private func launchArgumentValue(_ name: String, in arguments: [String]) -> String? {
-        guard let index = arguments.firstIndex(of: name) else { return nil }
-        let valueIndex = arguments.index(after: index)
-        guard valueIndex < arguments.endIndex else { return nil }
-        return arguments[valueIndex]
-    }
 #endif
 }
