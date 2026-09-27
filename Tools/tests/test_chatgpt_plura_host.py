@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import argparse
+import contextlib
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -48,6 +52,12 @@ from chatgpt_plura_host.renderer import (
     _normalize_semantic_items,
     _transcript_expression,
 )
+
+
+HOST_CLI_SPEC = importlib.util.spec_from_file_location("plura_host_cli", TOOLS / "chatgpt-plura-host.py")
+assert HOST_CLI_SPEC is not None and HOST_CLI_SPEC.loader is not None
+HOST_CLI = importlib.util.module_from_spec(HOST_CLI_SPEC)
+HOST_CLI_SPEC.loader.exec_module(HOST_CLI)
 
 
 def write_fake_control(
@@ -131,6 +141,38 @@ class FakeMultiProfile:
 
 
 class HostContractTests(unittest.TestCase):
+    def test_show_pairing_is_one_shot_and_does_not_start_server(self):
+        class CredentialStore:
+            def load_or_create(self, *, reset: bool = False):
+                return ("capability-token", False)
+
+        class Platform:
+            def __init__(self, root: Path) -> None:
+                self.state_dir = root / "state"
+                self.credential_store = CredentialStore()
+
+        args = argparse.Namespace(
+            listen_host="0.0.0.0",
+            listen_port=8765,
+            show_pairing=True,
+            reset_pairing=False,
+            pairing_bootstrap_file=None,
+            advertise_endpoint=[],
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            platform = Platform(Path(temp))
+            output = io.StringIO()
+            with (
+                patch.object(HOST_CLI, "current_platform", return_value=platform),
+                patch.object(HOST_CLI, "discover_connection_endpoints", return_value=[]),
+                patch.object(HOST_CLI.asyncio, "start_server", side_effect=AssertionError("must not bind")),
+                contextlib.redirect_stdout(output),
+            ):
+                asyncio.run(HOST_CLI.run(args))
+
+        self.assertIn("Plura Host pairing", output.getvalue())
+        self.assertIn("Pairing token (enter once): capability-token", output.getvalue())
+
     def test_tailscale_status_prefers_stable_dns_then_ips(self):
         endpoints = _tailscale_endpoints_from_status(
             json.dumps({

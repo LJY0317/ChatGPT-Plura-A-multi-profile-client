@@ -76,3 +76,4 @@ launchctl kickstart -k "gui/$UID_VALUE/$LABEL"
 echo "Installed Plura Host LaunchAgent: $LABEL"
 echo "Runtime: $RUNTIME"
 echo 'Prerequisites verified: official ChatGPT app + Plura Desktop control runtime.'
+echo 'Show the current pairing token with: python3 Tools/chatgpt-plura-host.py --show-pairing'

@@ -63,7 +63,7 @@ Tools/uninstall-macos-host.sh --purge
 
 This never removes `/Applications/ChatGPT.app`, Plura Desktop's managed profiles, or another project's state.
 
-The host prints every connection path it can safely discover. Pair the iOS app once; later runs reuse the saved host credential and endpoint hints. The iOS Keychain stores the capability token, last successful host URL, target ID, and private-overlay endpoints, so reconnects can fail over between LAN and overlay paths without falling back to a stale hard-coded address. To deliberately show or rotate the host pairing credential:
+The host prints every connection path it can safely discover. Pair the iOS app once; later runs reuse the saved host credential and endpoint hints. The iOS Keychain stores the capability token, last successful host URL, target ID, and private-overlay endpoints, so reconnects can fail over between LAN and overlay paths without falling back to a stale hard-coded address. To deliberately show or rotate the host pairing credential, use the one-shot commands below. They do not start another Host server, so they are safe to run while the installed LaunchAgent already owns port 8765:
 
 ```sh
 python3 Tools/chatgpt-plura-host.py --show-pairing

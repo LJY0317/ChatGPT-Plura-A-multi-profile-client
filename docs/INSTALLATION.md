@@ -36,6 +36,14 @@ Tools/install-macos-host.sh
 
 The installer copies a self-contained runtime to Application Support and installs a per-user LaunchAgent. Re-running it replaces only the derived host runtime and preserves pairing/state.
 
+After installation, show the current pairing token without stopping or duplicating the running Host:
+
+```sh
+python3 Tools/chatgpt-plura-host.py --show-pairing
+```
+
+This is a one-shot operator query: it prints the reachable endpoints and current token, then exits without binding the Host listen port. Use `--reset-pairing --show-pairing` only when you deliberately want to rotate the credential.
+
 Remove the installed runtime but preserve host pairing/state:
 
 ```sh

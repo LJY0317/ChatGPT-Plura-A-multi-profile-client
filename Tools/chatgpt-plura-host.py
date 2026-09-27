@@ -32,10 +32,32 @@ def parse_args() -> argparse.Namespace:
 
 async def run(args: argparse.Namespace) -> None:
     platform = current_platform()
-    if not platform.control_cli.is_file():
-        raise RuntimeError(f"Plura Desktop control CLI is missing: {platform.control_cli}")
     platform.state_dir.mkdir(parents=True, exist_ok=True)
     token, created = platform.credential_store.load_or_create(reset=args.reset_pairing)
+
+    # Pairing-token display is an operator query, not a request to start a
+    # second bridge server. Keeping it one-shot means it remains usable while
+    # the installed LaunchAgent already owns the normal listen port.
+    if args.show_pairing:
+        endpoints = discover_connection_endpoints(args.listen_port, args.advertise_endpoint)
+        print("Plura Host pairing")
+        if endpoints:
+            print("Reachable endpoints:")
+            for endpoint in endpoints:
+                print(f"  {endpoint.label}: {endpoint.url}")
+        else:
+            print("Reachable endpoints: none detected; use --advertise-endpoint for a private overlay hostname/IP")
+        print(f"Pairing token (enter once): {token}")
+        if args.reset_pairing:
+            print("Pairing token: rotated")
+        elif created:
+            print("Pairing token: created")
+        else:
+            print("Pairing token: current")
+        return
+
+    if not platform.control_cli.is_file():
+        raise RuntimeError(f"Plura Desktop control CLI is missing: {platform.control_cli}")
 
     pairing = None
     if args.pairing_bootstrap_file is not None:
@@ -71,7 +93,7 @@ async def run(args: argparse.Namespace) -> None:
     else:
         print("Reachable endpoints: none detected; use --advertise-endpoint for a private overlay hostname/IP")
     print("Targets: authenticated GET /targets")
-    if created or args.show_pairing:
+    if created:
         print(f"Pairing token (enter once): {token}")
     else:
         print("Pairing token: reused from the platform credential store")
