@@ -29,6 +29,7 @@ from chatgpt_plura_host.network import (
     _tailscale_endpoints_from_status,
     _zerotier_endpoints_from_networks,
 )
+import chatgpt_plura_host.platform as host_platform
 from chatgpt_plura_host.platform import _linux_lan_ipv4_from_ip, _macos_lan_ipv4_from_ifconfig
 from chatgpt_plura_host.renderer import (
     ChatRendererUnavailable,
@@ -173,6 +174,43 @@ class FakeMultiProfile:
 
 
 class HostContractTests(unittest.TestCase):
+    def test_platforms_use_only_canonical_plura_desktop_control_cli(self):
+        dummy_store = object()
+        with (
+            patch.object(host_platform.Path, "home", return_value=Path("/Users/tester")),
+            patch.object(host_platform.sys, "platform", "darwin"),
+            patch.object(host_platform, "MacOSCredentialStore", return_value=dummy_store),
+        ):
+            platform = host_platform.current_platform()
+            self.assertEqual(
+                platform.control_cli,
+                Path("/Users/tester/Library/Application Support/PluraDesktop/plura-desktop"),
+            )
+
+        with (
+            patch.object(host_platform.Path, "home", return_value=Path("C:/Users/tester")),
+            patch.object(host_platform.sys, "platform", "win32"),
+            patch.dict(host_platform.os.environ, {"LOCALAPPDATA": "C:/Users/tester/AppData/Local"}, clear=False),
+            patch.object(host_platform, "WindowsCredentialStore", return_value=dummy_store),
+        ):
+            platform = host_platform.current_platform()
+            self.assertEqual(
+                platform.control_cli,
+                Path("C:/Users/tester/AppData/Local/PluraDesktop/plura-desktop.cmd"),
+            )
+
+        with (
+            patch.object(host_platform.Path, "home", return_value=Path("/home/tester")),
+            patch.object(host_platform.sys, "platform", "linux"),
+            patch.dict(host_platform.os.environ, {"XDG_STATE_HOME": "/home/tester/.local/state"}, clear=False),
+            patch.object(host_platform, "LinuxCredentialStore", return_value=dummy_store),
+        ):
+            platform = host_platform.current_platform()
+            self.assertEqual(
+                platform.control_cli,
+                Path("/home/tester/.local/state/PluraDesktop/plura-desktop"),
+            )
+
     def test_show_pairing_is_one_shot_and_does_not_start_server(self):
         class CredentialStore:
             def load_or_create(self, *, reset: bool = False):
