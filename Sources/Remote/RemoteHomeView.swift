@@ -205,11 +205,11 @@ struct RemoteHomeView: View {
         }
 
         ToolbarItem(placement: .topBarTrailing) {
-            if store.showingThreadList {
+            if store.showingThreadList, !isSearching {
                 Button {
-                    isSearching.toggle()
+                    isSearching = true
                 } label: {
-                    Image(systemName: isSearching ? "xmark" : "magnifyingglass")
+                    Image(systemName: "magnifyingglass")
                 }
                 .accessibilityLabel("Search conversations")
             } else if store.isCloudChatMirror {
@@ -512,6 +512,7 @@ struct RemoteHomeView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .refreshable {
             if surface == .chat {
                 store.refreshChatCatalog()
@@ -532,11 +533,9 @@ struct RemoteHomeView: View {
         }
         .overlay {
             if store.isOpeningThread {
-                ProgressView("Opening…")
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 14)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                ProgressView()
+                    .controlSize(.regular)
+                    .accessibilityLabel("Opening conversation")
             }
         }
     }
