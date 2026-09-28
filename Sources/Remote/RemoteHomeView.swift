@@ -34,6 +34,7 @@ struct RemoteHomeView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .body) private var composerControlSize: CGFloat = 34
     @ScaledMetric(relativeTo: .body) private var libraryIconSize: CGFloat = 30
     @ScaledMetric(relativeTo: .caption) private var statusDotSize: CGFloat = 7
@@ -55,22 +56,7 @@ struct RemoteHomeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if store.showingThreadList {
-                listContextHeader
-            }
-            connectionBanner
-            mainContent
-        }
-        .background(Color(uiColor: .systemBackground))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { navigationToolbar }
-        .searchable(
-            text: $searchText,
-            isPresented: $isSearching,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Search conversations"
-        )
+        adaptiveNavigation
         .onChange(of: scenePhase) { _, phase in
             store.handleScenePhase(phase)
         }
@@ -143,16 +129,56 @@ struct RemoteHomeView: View {
         }
     }
 
+    @ViewBuilder
+    private var adaptiveNavigation: some View {
+        if horizontalSizeClass == .regular {
+            NavigationSplitView {
+                sidebarContent
+                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+            } detail: {
+                NavigationStack {
+                    primaryContent
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            NavigationStack {
+                primaryContent
+            }
+        }
+    }
+
+    private var primaryContent: some View {
+        VStack(spacing: 0) {
+            if store.showingThreadList {
+                listContextHeader
+            }
+            connectionBanner
+            mainContent
+        }
+        .background(Color(uiColor: .systemBackground))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { navigationToolbar }
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearching,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search conversations"
+        )
+    }
+
     @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             if store.showingThreadList {
-                Button {
-                    showsSidebar = true
-                } label: {
-                    Image(systemName: "line.3.horizontal")
+                if horizontalSizeClass != .regular {
+                    Button {
+                        showsSidebar = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }
+                    .accessibilityLabel("Open menu")
                 }
-                .accessibilityLabel("Open menu")
             } else {
                 Button { store.showConversations() } label: {
                     Image(systemName: "chevron.left")
@@ -859,77 +885,81 @@ struct RemoteHomeView: View {
 
     private var sidebar: some View {
         NavigationStack {
-            List {
-                Section {
-                    sidebarNavigationRow(.chat)
-                    sidebarNavigationRow(.work)
-                    sidebarNavigationRow(.codex)
-                }
-
-                if store.hasMultipleTargets {
-                    Section("Profiles") {
-                        ForEach(store.targets) { target in
-                            Button {
-                                store.selectTarget(target)
-                                showsSidebar = false
-                            } label: {
-                                HStack(spacing: 11) {
-                                    Image(systemName: target.activationSystemImage)
-                                        .frame(width: 22)
-                                    Text(store.targetPresentationName(target))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    if store.selectedTargetID == target.id {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.tint)
-                                    }
-                                }
-                                .foregroundStyle(.primary)
-                            }
-                            .disabled(!store.canChangeTarget)
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        showsSidebar = false
-                        showsConnectionSettings = true
-                    } label: {
-                        HStack(spacing: 11) {
-                            Circle().fill(store.statusColor).frame(width: 8, height: 8)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Connection")
-                                Text(store.statusText)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                    .accessibilityIdentifier("sidebarConnection")
-
-                    ShareLink(item: store.diagnosticsURL) {
-                        Label("Export diagnostics", systemImage: "square.and.arrow.up")
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Plura Mobile")
-            .navigationBarTitleDisplayMode(.inline)
+            sidebarContent
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { showsSidebar = false }
                 }
             }
-            .accessibilityIdentifier("sidebarTitle")
-            .accessibilityLabel("Plura Mobile")
         }
+    }
+
+    private var sidebarContent: some View {
+        List {
+            Section {
+                sidebarNavigationRow(.chat)
+                sidebarNavigationRow(.work)
+                sidebarNavigationRow(.codex)
+            }
+
+            if store.hasMultipleTargets {
+                Section("Profiles") {
+                    ForEach(store.targets) { target in
+                        Button {
+                            store.selectTarget(target)
+                            showsSidebar = false
+                        } label: {
+                            HStack(spacing: 11) {
+                                Image(systemName: target.activationSystemImage)
+                                    .frame(width: 22)
+                                Text(store.targetPresentationName(target))
+                                    .lineLimit(1)
+                                Spacer()
+                                if store.selectedTargetID == target.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                        .disabled(!store.canChangeTarget)
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    showsSidebar = false
+                    showsConnectionSettings = true
+                } label: {
+                    HStack(spacing: 11) {
+                        Circle().fill(store.statusColor).frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connection")
+                            Text(store.statusText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .accessibilityIdentifier("sidebarConnection")
+
+                ShareLink(item: store.diagnosticsURL) {
+                    Label("Export diagnostics", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Plura Mobile")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("sidebarTitle")
+        .accessibilityLabel("Plura Mobile")
     }
 
     private func sidebarNavigationRow(_ item: Surface) -> some View {

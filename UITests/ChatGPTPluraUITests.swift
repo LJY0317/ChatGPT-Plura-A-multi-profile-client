@@ -102,22 +102,25 @@ final class ChatGPTPluraUITests: XCTestCase {
         app.launch()
 
         let menuButton = app.buttons["Open menu"]
-        XCTAssertTrue(menuButton.waitForExistence(timeout: 5))
+        func revealSidebarIfNeeded() {
+            if menuButton.waitForExistence(timeout: 1) {
+                menuButton.tap()
+            }
+        }
 
-        menuButton.tap()
+        revealSidebarIfNeeded()
         let sidebarTitle = app.descendants(matching: .any).matching(identifier: "sidebarTitle").firstMatch
         XCTAssertTrue(sidebarTitle.waitForExistence(timeout: 3))
         XCTAssertEqual(sidebarTitle.label, "Plura Mobile")
 
         app.buttons["sidebarSurface.work"].tap()
-        XCTAssertTrue(menuButton.waitForExistence(timeout: 3))
 
-        menuButton.tap()
+        revealSidebarIfNeeded()
         XCTAssertTrue(app.buttons["sidebarSurface.codex"].waitForExistence(timeout: 3))
         app.buttons["sidebarSurface.codex"].tap()
         XCTAssertTrue(app.staticTexts["Codex"].waitForExistence(timeout: 3))
 
-        menuButton.tap()
+        revealSidebarIfNeeded()
         XCTAssertTrue(app.staticTexts["Connection"].waitForExistence(timeout: 3))
         app.staticTexts["Connection"].tap()
         XCTAssertTrue(app.navigationBars["Connection"].waitForExistence(timeout: 3))
