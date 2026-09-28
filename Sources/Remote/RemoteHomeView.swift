@@ -55,6 +55,23 @@ struct RemoteHomeView: View {
         Surface(rawValue: surfaceRawValue) ?? .chat
     }
 
+    private var selectedTargetNeedsConnectionRelaunch: Bool {
+        store.selectedTarget?.activationState == .restartRequired
+    }
+
+    private var relaunchConfirmationTitle: String {
+        selectedTargetNeedsConnectionRelaunch
+            ? "Relaunch ChatGPT Profile?"
+            : "Relaunch ChatGPT for Fast Chat?"
+    }
+
+    private var relaunchConfirmationMessage: String {
+        if selectedTargetNeedsConnectionRelaunch {
+            return "This profile is already running outside Plura Desktop's canonical remote runtime. Plura Mobile will ask Plura Desktop to quit this exact ChatGPT profile normally and relaunch it. An unsent Mac draft or in-progress response may be interrupted."
+        }
+        return "Plura Mobile will ask Plura Desktop to quit this exact ChatGPT profile normally, then relaunch it with the best available Chat mirror. An unsent Mac draft or in-progress response may be interrupted."
+    }
+
     var body: some View {
         adaptiveNavigation
         .onChange(of: scenePhase) { _, phase in
@@ -80,14 +97,14 @@ struct RemoteHomeView: View {
             )
         }
         .confirmationDialog(
-            "Relaunch ChatGPT for Fast Chat?",
+            relaunchConfirmationTitle,
             isPresented: $showsFastChatRelaunchConfirmation,
             titleVisibility: .visible
         ) {
             Button("Quit & Relaunch ChatGPT") { store.prepareFastChat() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Plura Mobile will ask Plura Desktop to quit this exact ChatGPT profile normally, then relaunch it with the best available Chat mirror. An unsent Mac draft or in-progress response may be interrupted.")
+            Text(relaunchConfirmationMessage)
         }
         .sheet(item: $store.userInputPrompt) { prompt in
             RemoteUserInputSheet(
@@ -404,24 +421,48 @@ struct RemoteHomeView: View {
                 retryAction: nil
             )
         case .failed:
-            connectionNotice(
-                systemName: "exclamationmark.triangle",
-                title: "Mac connection unavailable",
-                detail: store.hasPresentationContent ? "Saved content stays available. Retry when your Mac is reachable." : "Check that Plura Host is running and reachable.",
-                savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
-                showsProgress: false,
-                retryAction: { store.connect(preservingPresentation: store.hasPresentationContent) }
-            )
-        case .disconnected:
-            if store.hasSavedPairing {
+            if selectedTargetNeedsConnectionRelaunch {
                 connectionNotice(
-                    systemName: "desktopcomputer",
-                    title: "Mac is offline",
-                    detail: store.hasPresentationContent ? "Showing saved content until the connection returns." : "Reconnect to load your profiles and conversations.",
+                    systemName: "arrow.clockwise.circle",
+                    title: "Profile relaunch required",
+                    detail: "This ChatGPT profile needs one normal quit and relaunch before Plura Mobile can connect to it.",
+                    savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
+                    showsProgress: false,
+                    actionTitle: "Relaunch",
+                    retryAction: store.canPrepareFastChat ? { showsFastChatRelaunchConfirmation = true } : nil
+                )
+            } else {
+                connectionNotice(
+                    systemName: "exclamationmark.triangle",
+                    title: "Mac connection unavailable",
+                    detail: store.hasPresentationContent ? "Saved content stays available. Retry when your Mac is reachable." : "Check that Plura Host is running and reachable.",
                     savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
                     showsProgress: false,
                     retryAction: { store.connect(preservingPresentation: store.hasPresentationContent) }
                 )
+            }
+        case .disconnected:
+            if store.hasSavedPairing {
+                if selectedTargetNeedsConnectionRelaunch {
+                    connectionNotice(
+                        systemName: "arrow.clockwise.circle",
+                        title: "Profile relaunch required",
+                        detail: "This ChatGPT profile needs one normal quit and relaunch before Plura Mobile can connect to it.",
+                        savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
+                        showsProgress: false,
+                        actionTitle: "Relaunch",
+                        retryAction: store.canPrepareFastChat ? { showsFastChatRelaunchConfirmation = true } : nil
+                    )
+                } else {
+                    connectionNotice(
+                        systemName: "desktopcomputer",
+                        title: "Mac is offline",
+                        detail: store.hasPresentationContent ? "Showing saved content until the connection returns." : "Reconnect to load your profiles and conversations.",
+                        savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
+                        showsProgress: false,
+                        retryAction: { store.connect(preservingPresentation: store.hasPresentationContent) }
+                    )
+                }
             }
         }
     }
@@ -432,6 +473,7 @@ struct RemoteHomeView: View {
         detail: String,
         savedAt: Date?,
         showsProgress: Bool,
+        actionTitle: String = "Retry",
         retryAction: (() -> Void)?
     ) -> some View {
         HStack(spacing: 11) {
@@ -469,7 +511,7 @@ struct RemoteHomeView: View {
             Spacer(minLength: 8)
 
             if let retryAction {
-                Button("Retry", action: retryAction)
+                Button(actionTitle, action: retryAction)
                     .font(.caption.weight(.semibold))
                     .buttonStyle(.bordered)
                     .controlSize(.small)

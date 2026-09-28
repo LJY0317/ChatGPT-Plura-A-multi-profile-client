@@ -475,6 +475,14 @@ final class RemoteCodexStore {
 
     private func scheduleReconnect(reason: String, immediate: Bool = false) {
         guard sceneIsActive, hasSavedPairing, !isConnected, !isConnecting else { return }
+        guard RemoteReconnectPolicy.shouldAutomaticallyReconnect(selectedTarget) else {
+            diagnostics.record("connection.reconnect.suppressed", fields: [
+                "reason": reason,
+                "targetID": selectedTargetID ?? "",
+                "activationState": selectedTarget?.activationState.rawValue ?? "unknown"
+            ])
+            return
+        }
         reconnectTask?.cancel()
         let attempt = reconnectAttempt
         let delayMilliseconds: Int

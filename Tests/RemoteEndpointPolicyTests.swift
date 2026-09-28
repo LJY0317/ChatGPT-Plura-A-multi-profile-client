@@ -358,6 +358,20 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         )
     }
 
+    func testReconnectPolicyDoesNotLoopForTargetsThatRequireUserAction() throws {
+        let restartData = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"restart-required","chatMirrorState":"restart-required"}"#.utf8)
+        let restartRequired = try JSONDecoder().decode(RemoteTarget.self, from: restartData)
+        let unsupportedData = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"unsupported","chatMirrorState":"unsupported"}"#.utf8)
+        let unsupported = try JSONDecoder().decode(RemoteTarget.self, from: unsupportedData)
+        let availableData = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"available","chatMirrorState":"available"}"#.utf8)
+        let available = try JSONDecoder().decode(RemoteTarget.self, from: availableData)
+
+        XCTAssertFalse(RemoteReconnectPolicy.shouldAutomaticallyReconnect(restartRequired))
+        XCTAssertFalse(RemoteReconnectPolicy.shouldAutomaticallyReconnect(unsupported))
+        XCTAssertTrue(RemoteReconnectPolicy.shouldAutomaticallyReconnect(available))
+        XCTAssertTrue(RemoteReconnectPolicy.shouldAutomaticallyReconnect(nil))
+    }
+
     func testReadyTargetSurfacesRendererRelaunchCapabilitySeparately() throws {
         let data = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"ready","chatMirrorState":"restart-required"}"#.utf8)
         let target = try JSONDecoder().decode(RemoteTarget.self, from: data)

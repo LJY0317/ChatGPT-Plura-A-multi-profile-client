@@ -192,6 +192,16 @@ struct RemoteReconnectPolicy {
         guard hasSavedPairing, !forceTargetDiscovery, let target else { return false }
         return target.activationState == .ready && !target.route.isEmpty
     }
+
+    static func shouldAutomaticallyReconnect(_ target: RemoteTarget?) -> Bool {
+        guard let target else { return true }
+        switch target.activationState {
+        case .restartRequired, .unsupported:
+            return false
+        case .ready, .available, .unavailable:
+            return true
+        }
+    }
 }
 
 private struct RemoteTargetsResponse: Decodable {
