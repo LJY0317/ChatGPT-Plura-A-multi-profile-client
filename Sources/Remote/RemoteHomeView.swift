@@ -49,7 +49,9 @@ struct RemoteHomeView: View {
     var body: some View {
         ZStack(alignment: .leading) {
             VStack(spacing: 0) {
-                topBar
+                if store.showingThreadList {
+                    listContextHeader
+                }
                 if isSearching && store.showingThreadList {
                     searchBar
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -70,7 +72,8 @@ struct RemoteHomeView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: showsSidebar)
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { navigationToolbar }
         .onChange(of: scenePhase) { _, phase in
             store.handleScenePhase(phase)
         }
@@ -138,106 +141,107 @@ struct RemoteHomeView: View {
         }
     }
 
-    private var topBar: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                if store.showingThreadList {
-                    chromeButton(systemName: "line.3.horizontal") {
-                        withAnimation(.easeOut(duration: 0.18)) { showsSidebar = true }
-                    }
-                    .accessibilityLabel("Open menu")
-                } else {
-                    chromeButton(systemName: "chevron.left") { store.showConversations() }
-                        .disabled(!store.canSwitchThreads)
-                        .accessibilityLabel("Back to conversations")
-                }
-
-                Spacer(minLength: 4)
-
-                if store.showingThreadList {
-                    if surface == .codex {
-                        Text("Codex")
-                            .font(.headline)
-                    } else {
-                        Picker("Mode", selection: surfaceBinding) {
-                            Text("Chat").tag(Surface.chat)
-                            Text("Work").tag(Surface.work)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 230)
-                        .accessibilityIdentifier("pluraSurfacePicker")
-                    }
-                } else {
-                    VStack(spacing: 1) {
-                        Text(store.navigationTitle)
-                            .font(.headline)
-                            .lineLimit(1)
-                        if store.hasMultipleTargets {
-                            Text(store.selectedTargetPresentationName ?? surface.rawValue)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 4)
-
-                if store.showingThreadList {
-                    chromeButton(systemName: "magnifyingglass") {
-                        withAnimation(.easeOut(duration: 0.18)) { isSearching.toggle() }
-                    }
-                    .accessibilityLabel("Search conversations")
-                } else {
-                    if store.isCloudChatMirror {
-                        chromeButton(systemName: "arrow.clockwise") { store.refreshActiveCloudChat() }
-                            .disabled(store.isLoadingCloudTranscript)
-                            .accessibilityLabel("Refresh Desktop chat")
-                    } else {
-                        modelMenu
-                            .frame(width: 44, height: 44)
-                    }
-                }
-            }
-
+    @ToolbarContentBuilder
+    private var navigationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
             if store.showingThreadList {
-                targetChrome
-                if surface == .chat, store.selectedTarget?.chatMirrorNeedsRelaunch == true {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.horizontal.circle")
-                        Text("Fast Chat needs one normal ChatGPT relaunch.")
-                            .lineLimit(2)
-                        Spacer(minLength: 4)
-                        if store.isPreparingFastChat {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Button("Relaunch") {
-                                showsFastChatRelaunchConfirmation = true
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!store.canPrepareFastChat)
-                        }
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { showsSidebar = true }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                }
+                .accessibilityLabel("Open menu")
+            } else {
+                Button { store.showConversations() } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(!store.canSwitchThreads)
+                .accessibilityLabel("Back to conversations")
+            }
+        }
+
+        ToolbarItem(placement: .principal) {
+            if store.showingThreadList {
+                if surface == .codex {
+                    Text("Codex")
+                        .font(.headline)
+                } else {
+                    Picker("Mode", selection: surfaceBinding) {
+                        Text("Chat").tag(Surface.chat)
+                        Text("Work").tag(Surface.work)
                     }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityLabel("Fast Chat requires one normal ChatGPT relaunch")
+                    .pickerStyle(.segmented)
+                    .frame(width: 190)
+                    .accessibilityIdentifier("pluraSurfacePicker")
+                }
+            } else {
+                VStack(spacing: 1) {
+                    Text(store.navigationTitle)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if store.hasMultipleTargets {
+                        Text(store.selectedTargetPresentationName ?? surface.rawValue)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-        .background(.regularMaterial)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color(uiColor: .separator).opacity(0.28))
-                .frame(height: 1 / UIScreen.main.scale)
+
+        ToolbarItem(placement: .topBarTrailing) {
+            if store.showingThreadList {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { isSearching.toggle() }
+                } label: {
+                    Image(systemName: isSearching ? "xmark" : "magnifyingglass")
+                }
+                .accessibilityLabel("Search conversations")
+            } else if store.isCloudChatMirror {
+                Button { store.refreshActiveCloudChat() } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(store.isLoadingCloudTranscript)
+                .accessibilityLabel("Refresh Desktop chat")
+            } else {
+                modelMenu
+            }
         }
+    }
+
+    private var listContextHeader: some View {
+        VStack(spacing: 8) {
+            targetChrome
+            if surface == .chat, store.selectedTarget?.chatMirrorNeedsRelaunch == true {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.horizontal.circle")
+                    Text("Fast Chat needs one normal ChatGPT relaunch.")
+                        .lineLimit(2)
+                    Spacer(minLength: 4)
+                    if store.isPreparingFastChat {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Relaunch") {
+                            showsFastChatRelaunchConfirmation = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!store.canPrepareFastChat)
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityLabel("Fast Chat requires one normal ChatGPT relaunch")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .background(.bar)
     }
 
     @ViewBuilder
@@ -258,9 +262,8 @@ struct RemoteHomeView: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 36)
-            .padding(.vertical, 2)
-            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+            .frame(minHeight: 42)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .accessibilityElement(children: .combine)
         }
     }
@@ -285,17 +288,6 @@ struct RemoteHomeView: View {
             get: { surface == .codex ? .chat : surface },
             set: { selectSurface($0) }
         )
-    }
-
-    private func chromeButton(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 18, weight: .medium))
-                .frame(width: 44, height: 44)
-                .background(.thinMaterial, in: Circle())
-                .overlay(Circle().stroke(.quaternary, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
     }
 
     private var profileMenu: some View {
@@ -340,10 +332,9 @@ struct RemoteHomeView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 36)
-            .padding(.vertical, 2)
-            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-            .contentShape(Capsule())
+            .frame(minHeight: 42)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .accessibilityElement(children: .combine)
         }
     }
@@ -803,11 +794,9 @@ struct RemoteHomeView: View {
         } label: {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 17, weight: .medium))
-                .frame(width: 44, height: 44)
-                .background(.thinMaterial, in: Circle())
-                .overlay(Circle().stroke(.quaternary, lineWidth: 1))
         }
         .disabled(!store.canSwitchThreads)
+        .accessibilityLabel("Model settings")
     }
 
     @ViewBuilder
@@ -1075,6 +1064,22 @@ struct RemoteHomeView: View {
                 .accessibilityLabel("Message attachments")
             }
 
+            if let composerStatus = store.composerStatusText {
+                HStack(spacing: 6) {
+                    if store.isSendingCloudMessage || store.isUploadingCloudAttachment {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: store.cloudChatActivity == "streaming" ? "ellipsis.message" : "exclamationmark.circle")
+                    }
+                    Text(composerStatus)
+                        .lineLimit(2)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
+                .accessibilityElement(children: .combine)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
                 if store.isCloudChatMirror && store.cloudChatCanAttach {
                     Menu {
@@ -1090,7 +1095,7 @@ struct RemoteHomeView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 18, weight: .medium))
                             .frame(width: 34, height: 34)
-                            .background(.quaternary, in: Circle())
+                            .background(Color(uiColor: .tertiarySystemFill), in: Circle())
                     }
                     .disabled(!store.canStageCloudAttachment)
                     .accessibilityLabel("Add attachment")
@@ -1103,21 +1108,31 @@ struct RemoteHomeView: View {
                     .onSubmit(store.sendDraft)
                     .accessibilityIdentifier("remoteComposerField")
                 Button(action: store.sendDraft) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(store.canSend ? Color.primary : Color.secondary.opacity(0.35), in: Circle())
+                    Group {
+                        if store.isSendingCloudMessage {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(store.canSend ? .white : .secondary)
+                        }
+                    }
+                    .frame(width: 34, height: 34)
+                    .background(
+                        store.canSend ? Color.accentColor : Color(uiColor: .tertiarySystemFill),
+                        in: Circle()
+                    )
                 }
                 .disabled(!store.canSend)
                 .accessibilityLabel("Send message")
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(.quaternary, lineWidth: 1))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 4)
+        .padding(.vertical, 10)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.quaternary, lineWidth: 0.5))
     }
 
     private var conversationFooterSeparator: some View {

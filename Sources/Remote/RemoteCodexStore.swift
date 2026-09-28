@@ -260,6 +260,14 @@ final class RemoteCodexStore {
         guard let selectedModel else { return "Model" }
         return modelDisplayName(for: selectedModel)
     }
+    var composerStatusText: String? {
+        guard isCloudChatMirror else { return nil }
+        if cloudSendRequiresRefresh { return "Refresh this chat before retrying" }
+        if isSendingCloudMessage { return "Sending through ChatGPT Desktop…" }
+        if isUploadingCloudAttachment { return "Preparing attachment…" }
+        if cloudChatActivity == "streaming" { return "ChatGPT is responding…" }
+        return nil
+    }
     var statusText: String {
         if isCloudChatMirror {
             if isLoadingCloudTranscript { return messages.isEmpty ? "Loading Desktop mirror…" : "Refreshing Desktop mirror…" }
