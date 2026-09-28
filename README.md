@@ -159,6 +159,10 @@ python3 -m unittest discover -s Tools/tests -v
 python3 -m compileall -q Tools/chatgpt_plura_host Tools/chatgpt-plura-host.py Tools/tests
 ```
 
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and test expectations. Security-sensitive findings should be reported through the process in [SECURITY.md](SECURITY.md), not in a public issue.
+
 The iOS CI job also selects an available iPhone simulator dynamically and runs `ChatGPTPluraTests`; local simulator names and OS versions are intentionally not hard-coded in the project documentation.
 
 Physical-device behavior is recorded separately from simulator/CI checks.
