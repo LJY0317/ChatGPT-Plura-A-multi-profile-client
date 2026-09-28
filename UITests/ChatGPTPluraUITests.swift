@@ -133,8 +133,9 @@ final class ChatGPTPluraUITests: XCTestCase {
         XCTAssertTrue(clearLog.waitForExistence(timeout: 3))
         clearLog.tap()
         XCTAssertTrue(app.staticTexts["Clear remote diagnostics?"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 3))
-        app.buttons["Cancel"].tap()
+        let clearActions = app.buttons.matching(identifier: "Clear Remote Log").allElementsBoundByAccessibilityElement
+        XCTAssertFalse(clearActions.isEmpty)
+        clearActions.last?.tap()
 
         app.buttons["Done"].tap()
 
