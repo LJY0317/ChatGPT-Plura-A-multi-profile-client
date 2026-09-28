@@ -456,7 +456,7 @@ private struct MarkdownTable {
     }
 }
 
-private final class MessageCell: UICollectionViewCell {
+private final class MessageCell: UICollectionViewCell, UIContextMenuInteractionDelegate {
     private static let horizontalBubbleRatio: CGFloat = 0.86
     private static let horizontalTextInset: CGFloat = 14
     private static let verticalTextInset: CGFloat = 10
@@ -469,6 +469,7 @@ private final class MessageCell: UICollectionViewCell {
     private var leadingConstraint: NSLayoutConstraint!
     private var trailingConstraint: NSLayoutConstraint!
     private var userMaxWidthConstraint: NSLayoutConstraint!
+    private var currentMessage: ChatMessage?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -484,6 +485,7 @@ private final class MessageCell: UICollectionViewCell {
 
         contentView.addSubview(bubble)
         bubble.addSubview(contentStack)
+        bubble.addInteraction(UIContextMenuInteraction(delegate: self))
 
         leadingConstraint = bubble.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14)
         trailingConstraint = bubble.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14)
@@ -510,6 +512,8 @@ private final class MessageCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        currentMessage = nil
+        accessibilityIdentifier = nil
         removeRenderedViews()
     }
 
@@ -519,6 +523,8 @@ private final class MessageCell: UICollectionViewCell {
         containerWidth: CGFloat
     ) {
         removeRenderedViews()
+        currentMessage = message
+        accessibilityIdentifier = "messageCell.\(message.role.rawValue)"
         let bubbleWidth = Self.contentWidth(for: message.role, containerWidth: containerWidth)
         let contentWidth = max(0, bubbleWidth - (Self.horizontalTextInset * 2))
 
@@ -543,6 +549,7 @@ private final class MessageCell: UICollectionViewCell {
                     label.attributedText = attributedText
                     label.isAccessibilityElement = true
                     label.accessibilityLabel = attributedText.string
+                    label.accessibilityCustomActions = [copyMessageAccessibilityAction()]
                     contentStack.addArrangedSubview(label)
                 case .code(let code):
                     let height = NativeCodeBlockView.height(
@@ -588,6 +595,37 @@ private final class MessageCell: UICollectionViewCell {
             trailingConstraint.isActive = true
             userMaxWidthConstraint.isActive = false
             bubble.backgroundColor = .clear
+        }
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let message = currentMessage,
+              message.role != .activity,
+              !message.text.isEmpty
+        else { return nil }
+
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            let copy = UIAction(
+                title: "Copy Message",
+                image: UIImage(systemName: "doc.on.doc")
+            ) { _ in
+                UIPasteboard.general.string = message.text
+            }
+            return UIMenu(children: [copy])
+        }
+    }
+
+    private func copyMessageAccessibilityAction() -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: "Copy Message") { [weak self] _ in
+            guard let message = self?.currentMessage,
+                  message.role != .activity,
+                  !message.text.isEmpty
+            else { return false }
+            UIPasteboard.general.string = message.text
+            return true
         }
     }
 

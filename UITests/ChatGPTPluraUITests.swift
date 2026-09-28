@@ -16,6 +16,13 @@ final class ChatGPTPluraUITests: XCTestCase {
         let transcript = app.collectionViews["chatTranscript"]
         XCTAssertTrue(transcript.waitForExistence(timeout: 3))
 
+        let assistantMessage = transcript.cells.matching(identifier: "messageCell.assistant").firstMatch
+        XCTAssertTrue(assistantMessage.waitForExistence(timeout: 3))
+        assistantMessage.press(forDuration: 0.8)
+        let copyMessage = app.buttons["Copy Message"]
+        XCTAssertTrue(copyMessage.waitForExistence(timeout: 3))
+        copyMessage.tap()
+
         let language = app.staticTexts["codeBlock.language"]
         for _ in 0..<8 where !language.exists {
             transcript.swipeDown(velocity: .fast)
