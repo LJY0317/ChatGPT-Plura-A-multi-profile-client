@@ -114,7 +114,7 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
                 collectionView.insertItems(at: [indexPath])
             } completion: { [weak self] _ in
                 guard shouldFollowBottom else { return }
-                self?.scrollToBottom(animated: true)
+                self?.scrollToBottom(animated: !UIAccessibility.isReduceMotionEnabled)
             }
             return
         }
