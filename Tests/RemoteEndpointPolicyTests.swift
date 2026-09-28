@@ -119,6 +119,69 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         )
     }
 
+    func testOfflineEmptyPresentationDoesNotReplaceUsefulCache() {
+        let cached = RemotePresentationSnapshot.TargetPresentation(
+            targetID: "profile-2",
+            savedAt: Date(timeIntervalSince1970: 100),
+            threads: [],
+            chatCatalogEntries: [],
+            chatProjects: [],
+            hasLoadedChatCatalog: false,
+            models: [],
+            selectedModel: nil,
+            showingThreadList: false,
+            threadID: "thread-1",
+            activeThreadTitle: "Cached",
+            messages: [ChatMessage(role: .assistant, text: "cached")],
+            isCloudChatMirror: false,
+            activeCloudConversationID: nil,
+            cloudChatIsPartial: false,
+            cloudRemoteMessageCount: 0,
+            cloudConversationCache: [:]
+        )
+        let empty = RemotePresentationSnapshot.TargetPresentation(
+            targetID: "profile-2",
+            savedAt: Date(timeIntervalSince1970: 200),
+            threads: [],
+            chatCatalogEntries: [],
+            chatProjects: [],
+            hasLoadedChatCatalog: false,
+            models: [],
+            selectedModel: nil,
+            showingThreadList: true,
+            threadID: nil,
+            activeThreadTitle: nil,
+            messages: [],
+            isCloudChatMirror: false,
+            activeCloudConversationID: nil,
+            cloudChatIsPartial: false,
+            cloudRemoteMessageCount: 0,
+            cloudConversationCache: [:]
+        )
+
+        XCTAssertFalse(
+            RemotePresentationSnapshot.shouldReplacePresentation(
+                existing: cached,
+                with: empty,
+                whileConnected: false
+            )
+        )
+        XCTAssertTrue(
+            RemotePresentationSnapshot.shouldReplacePresentation(
+                existing: cached,
+                with: empty,
+                whileConnected: true
+            )
+        )
+        XCTAssertTrue(
+            RemotePresentationSnapshot.shouldReplacePresentation(
+                existing: nil,
+                with: empty,
+                whileConnected: false
+            )
+        )
+    }
+
     func testChatTranscriptDecodesOptionalSemanticTimelineItems() throws {
         let data = Data(#"""
         {

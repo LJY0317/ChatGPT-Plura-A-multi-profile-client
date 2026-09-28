@@ -408,7 +408,25 @@ final class RemoteCodexStore {
             cloudConversationCache: cloudConversationCache
         ).bounded()
         var presentations = presentationSnapshot?.presentations ?? [:]
-        presentations[targetID] = current
+        let existing = presentations[targetID]
+        let shouldReplace = RemotePresentationSnapshot.shouldReplacePresentation(
+            existing: existing,
+            with: current,
+            whileConnected: isConnected
+        )
+        let persistedPresentation: RemotePresentationSnapshot.TargetPresentation
+        if shouldReplace {
+            presentations[targetID] = current
+            persistedPresentation = current
+        } else {
+            persistedPresentation = existing!
+            diagnostics.record("presentationSnapshot.emptyOfflineWriteSkipped", level: .debug, fields: [
+                "targetID": targetID,
+                "threadCount": persistedPresentation.threads.count,
+                "chatCount": persistedPresentation.chatCatalogEntries.count,
+                "messageCount": persistedPresentation.messages.count
+            ])
+        }
         let snapshotTargets = targets.isEmpty ? (presentationSnapshot?.targets ?? []) : targets
         let snapshot = RemotePresentationSnapshot(
             version: RemotePresentationSnapshot.currentVersion,
@@ -420,12 +438,12 @@ final class RemoteCodexStore {
         do {
             try presentationSnapshotStore.save(snapshot)
             presentationSnapshot = snapshot
-            presentationLastSyncedAt = current.savedAt
+            presentationLastSyncedAt = persistedPresentation.savedAt
             diagnostics.record("presentationSnapshot.saved", level: .debug, fields: [
                 "targetID": targetID,
-                "threadCount": current.threads.count,
-                "chatCount": current.chatCatalogEntries.count,
-                "messageCount": current.messages.count
+                "threadCount": persistedPresentation.threads.count,
+                "chatCount": persistedPresentation.chatCatalogEntries.count,
+                "messageCount": persistedPresentation.messages.count
             ])
         } catch {
             diagnostics.record("presentationSnapshot.saveFailed", level: .warning, fields: errorFields(error))

@@ -49,6 +49,14 @@ struct RemotePresentationSnapshot: Codable, Equatable {
         let cloudRemoteMessageCount: Int
         let cloudConversationCache: [String: CachedCloudConversation]?
 
+        var hasRenderableContent: Bool {
+            !threads.isEmpty
+                || !chatCatalogEntries.isEmpty
+                || threadID != nil
+                || !messages.isEmpty
+                || !(cloudConversationCache ?? [:]).isEmpty
+        }
+
         func bounded() -> TargetPresentation {
             let boundedCachePairs = (cloudConversationCache ?? [:])
                 .values
@@ -82,6 +90,16 @@ struct RemotePresentationSnapshot: Codable, Equatable {
     let selectedTargetID: String?
     let targets: [RemoteTarget]
     let presentations: [String: TargetPresentation]
+
+    static func shouldReplacePresentation(
+        existing: TargetPresentation?,
+        with candidate: TargetPresentation,
+        whileConnected: Bool
+    ) -> Bool {
+        if whileConnected { return true }
+        guard existing?.hasRenderableContent == true else { return true }
+        return candidate.hasRenderableContent
+    }
 
     func bounded() -> RemotePresentationSnapshot {
         let keptTargets = Array(targets.prefix(Self.maximumTargets))

@@ -156,11 +156,12 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: reuseIdentifier, for: indexPath)
         guard let messageCell = cell as? MessageCell else { return cell }
         let message = messages[indexPath.item]
-        let rendered = cachedRender(for: message, containerWidth: collectionView.bounds.width)
+        let width = readableWidth(in: collectionView)
+        let rendered = cachedRender(for: message, containerWidth: width)
         messageCell.configure(
             with: message,
             blocks: rendered.blocks,
-            containerWidth: collectionView.bounds.width
+            containerWidth: width
         )
         return messageCell
     }
@@ -170,7 +171,7 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        let width = min(collectionView.bounds.width, maxReadableWidth)
+        let width = readableWidth(in: collectionView)
         let rendered = cachedRender(for: messages[indexPath.item], containerWidth: width)
         return CGSize(
             width: width,
@@ -185,6 +186,10 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
     ) -> UIEdgeInsets {
         let horizontalInset = max(0, (collectionView.bounds.width - maxReadableWidth) / 2)
         return UIEdgeInsets(top: 12, left: horizontalInset, bottom: 12, right: horizontalInset)
+    }
+
+    private func readableWidth(in collectionView: UICollectionView) -> CGFloat {
+        min(collectionView.bounds.width, maxReadableWidth)
     }
 
     private var isNearBottom: Bool {
