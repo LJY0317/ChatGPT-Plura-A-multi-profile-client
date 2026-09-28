@@ -2,6 +2,10 @@ import XCTest
 @testable import ChatGPT_Plura___A_multi_profile_client
 
 final class RemoteEndpointPolicyTests: XCTestCase {
+    func testTargetDiscoveryTimeoutAllowsCanonicalDesktopRefreshLatency() {
+        XCTAssertEqual(RemoteHostClient.targetDiscoveryTimeout, 10)
+    }
+
 #if DEBUG
     func testLaunchAutomationUsesEnvironmentFallback() {
         let configuration = RemoteLaunchAutomationConfiguration(

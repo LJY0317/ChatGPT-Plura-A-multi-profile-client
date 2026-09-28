@@ -266,6 +266,8 @@ enum RemoteHostError: LocalizedError, Sendable {
 }
 
 struct RemoteHostClient: Sendable {
+    static let targetDiscoveryTimeout: TimeInterval = 10
+
     private let diagnostics: RemoteDiagnostics
 
     init(diagnostics: RemoteDiagnostics = .shared) {
@@ -275,7 +277,7 @@ struct RemoteHostClient: Sendable {
     func fetchTargets(
         baseURL: String,
         token: String,
-        timeout: TimeInterval = 4,
+        timeout: TimeInterval = RemoteHostClient.targetDiscoveryTimeout,
         allowTrustedOverlayPlaintext: Bool = false
     ) async throws -> [RemoteTarget] {
         let url = try httpURL(
