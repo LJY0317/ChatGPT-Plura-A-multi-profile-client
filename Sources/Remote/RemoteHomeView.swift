@@ -47,33 +47,22 @@ struct RemoteHomeView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            VStack(spacing: 0) {
-                if store.showingThreadList {
-                    listContextHeader
-                }
-                if isSearching && store.showingThreadList {
-                    searchBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                connectionBanner
-                mainContent
+        VStack(spacing: 0) {
+            if store.showingThreadList {
+                listContextHeader
             }
-            .background(Color(uiColor: .systemBackground))
-
-            if showsSidebar {
-                Color.black.opacity(0.14)
-                    .ignoresSafeArea()
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showsSidebar = false } }
-                    .transition(.opacity)
-
-                sidebar
-                    .transition(.move(edge: .leading))
-            }
+            connectionBanner
+            mainContent
         }
-        .animation(.easeOut(duration: 0.18), value: showsSidebar)
+        .background(Color(uiColor: .systemBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { navigationToolbar }
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearching,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search conversations"
+        )
         .onChange(of: scenePhase) { _, phase in
             store.handleScenePhase(phase)
         }
@@ -122,6 +111,11 @@ struct RemoteHomeView: View {
         }
         .sheet(isPresented: $showsConnectionSettings) {
             connectionSettingsSheet
+        }
+        .sheet(isPresented: $showsSidebar) {
+            sidebar
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: selectedCloudPhoto) { _, item in
             guard let item else { return }
@@ -339,27 +333,6 @@ struct RemoteHomeView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search conversations", text: $searchText)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 42)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
-    }
-
     @ViewBuilder
     private var connectionBanner: some View {
         switch store.state {
@@ -481,40 +454,48 @@ struct RemoteHomeView: View {
     }
 
     private var threadLibrary: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    surfaceContext
-                    libraryContent
-
-                    if let error = store.lastError {
-                        errorNotice(error)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                    }
-
-                    Color.clear.frame(height: store.isConnected ? 108 : 24)
-                }
-            }
-            .scrollIndicators(.hidden)
-            .refreshable {
-                if surface == .chat {
-                    store.refreshChatCatalog()
-                } else {
-                    store.refreshThreads()
-                }
+        List {
+            if surface != .chat {
+                surfaceContext
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
 
+            libraryContent
+
+            if let error = store.lastError {
+                errorNotice(error)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .refreshable {
+            if surface == .chat {
+                store.refreshChatCatalog()
+            } else {
+                store.refreshThreads()
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if store.isConnected {
                 newThreadComposer
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 10)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .background(.bar)
             }
-
+        }
+        .overlay {
             if store.isOpeningThread {
                 ProgressView("Opening…")
-                    .padding(18)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
             }
         }
     }
@@ -524,50 +505,60 @@ struct RemoteHomeView: View {
         if surface == .chat, store.hasLoadedChatCatalog || store.isLoadingChatCatalog {
             if store.isLoadingChatCatalog && store.chatCatalogEntries.isEmpty {
                 librarySkeleton
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
             } else if filteredChatCatalogEntries.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "No chats yet" : "No results",
                     systemImage: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass",
                     description: Text(searchText.isEmpty ? "No Desktop chats are currently available." : "Try a different search term.")
                 )
-                .padding(.top, 40)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(chatCatalogGroups, id: \.title) { group in
-                    librarySectionHeader(
-                        title: group.title,
-                        systemImage: group.isProject ? "folder.fill" : (group.title == "Pinned" ? "pin.fill" : "clock"),
-                        count: group.entries.count
-                    )
-
-                    ForEach(group.entries) { entry in
-                        chatCatalogRow(entry, insideProject: group.isProject)
-                        Divider().padding(.leading, 64)
+                    Section {
+                        ForEach(group.entries) { entry in
+                            chatCatalogRow(entry, insideProject: group.isProject)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        }
+                    } header: {
+                        librarySectionHeader(
+                            title: group.title,
+                            systemImage: group.isProject ? "folder.fill" : (group.title == "Pinned" ? "pin.fill" : "clock"),
+                            count: group.entries.count
+                        )
                     }
                 }
             }
         } else if store.isLoadingThreads && filteredThreads.isEmpty {
             librarySkeleton
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowSeparator(.hidden)
         } else if filteredThreads.isEmpty {
             ContentUnavailableView(
                 searchText.isEmpty ? "No conversations yet" : "No results",
                 systemImage: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass",
                 description: Text(searchText.isEmpty ? "Start a conversation below." : "Try a different search term.")
             )
-            .padding(.top, 40)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         } else {
             ForEach(threadGroups, id: \.title) { group in
-                librarySectionHeader(title: group.title, systemImage: "clock", count: group.threads.count)
-
-                ForEach(group.threads) { thread in
-                    threadRow(thread)
-                    Divider().padding(.leading, 64)
+                Section {
+                    ForEach(group.threads) { thread in
+                        threadRow(thread)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                } header: {
+                    librarySectionHeader(title: group.title, systemImage: "clock", count: group.threads.count)
                 }
             }
 
             if surface != .chat, store.hasMoreThreads && searchText.isEmpty {
                 Button("Load more") { store.loadMoreThreads() }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, 8)
                     .disabled(store.isLoadingThreads)
             }
         }
@@ -591,8 +582,6 @@ struct RemoteHomeView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 12)
         case .codex:
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 9) {
@@ -615,8 +604,6 @@ struct RemoteHomeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 12)
         }
     }
 
@@ -653,8 +640,7 @@ struct RemoteHomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 12)
+            .padding(.vertical, 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -695,8 +681,7 @@ struct RemoteHomeView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 22)
-        .padding(.vertical, 12)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
 
         Button { store.openChatCatalogEntry(entry) } label: { content }
@@ -724,17 +709,25 @@ struct RemoteHomeView: View {
             Button(action: store.startNewThreadFromDraft) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(
+                        store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? Color.secondary
+                            : Color.white
+                    )
                     .frame(width: 34, height: 34)
-                    .background(store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary.opacity(0.35) : Color.primary, in: Circle())
+                    .background(
+                        store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? Color(uiColor: .tertiarySystemFill)
+                            : Color.accentColor,
+                        in: Circle()
+                    )
             }
             .disabled(store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.canSwitchThreads)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(.quaternary, lineWidth: 1))
-        .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.quaternary, lineWidth: 0.5))
     }
 
     private func librarySectionHeader(title: String, systemImage: String, count: Int) -> some View {
@@ -751,9 +744,8 @@ struct RemoteHomeView: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 24)
-        .padding(.bottom, 7)
+        .textCase(nil)
+        .padding(.top, 8)
     }
 
     private func libraryRowIcon(systemName: String) -> some View {
@@ -781,7 +773,6 @@ struct RemoteHomeView: View {
                     }
                     Spacer()
                 }
-                .padding(.horizontal, 22)
                 .padding(.vertical, 13)
             }
         }
@@ -823,75 +814,43 @@ struct RemoteHomeView: View {
     }
 
     private var sidebar: some View {
-        GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Plura Mobile")
-                        .font(.title2.weight(.bold))
-                        .accessibilityLabel("Plura Mobile")
-                        .accessibilityIdentifier("sidebarTitle")
-                    Spacer()
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) { showsSidebar = false }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 38, height: 38)
-                            .background(.quaternary, in: Circle())
-                    }
-                    .buttonStyle(.plain)
+        NavigationStack {
+            List {
+                Section {
+                    sidebarNavigationRow(.chat)
+                    sidebarNavigationRow(.work)
+                    sidebarNavigationRow(.codex)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 22)
-                .padding(.bottom, 16)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        sidebarNavigationRow(.chat)
-                        sidebarNavigationRow(.work)
-                        sidebarNavigationRow(.codex)
-
-                        if store.hasMultipleTargets {
-                            Divider().padding(.vertical, 10)
-
-                            Text("Profiles")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 14)
-
-                            ForEach(store.targets) { target in
-                                Button {
-                                    store.selectTarget(target)
-                                    withAnimation(.easeOut(duration: 0.18)) { showsSidebar = false }
-                                } label: {
-                                    HStack(spacing: 11) {
-                                        Image(systemName: target.activationSystemImage)
-                                            .frame(width: 22)
-                                        Text(store.targetPresentationName(target))
-                                            .lineLimit(1)
-                                        Spacer()
-                                        if store.selectedTargetID == target.id {
-                                            Image(systemName: "checkmark")
-                                        }
+                if store.hasMultipleTargets {
+                    Section("Profiles") {
+                        ForEach(store.targets) { target in
+                            Button {
+                                store.selectTarget(target)
+                                showsSidebar = false
+                            } label: {
+                                HStack(spacing: 11) {
+                                    Image(systemName: target.activationSystemImage)
+                                        .frame(width: 22)
+                                    Text(store.targetPresentationName(target))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if store.selectedTargetID == target.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
                                     }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 14)
-                                    .frame(height: 46)
-                                    .background(store.selectedTargetID == target.id ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
-                                .buttonStyle(.plain)
-                                .disabled(!store.canChangeTarget)
+                                .foregroundStyle(.primary)
                             }
+                            .disabled(!store.canChangeTarget)
                         }
                     }
-                    .padding(.horizontal, 10)
                 }
 
-                Divider()
-                VStack(spacing: 4) {
+                Section {
                     Button {
+                        showsSidebar = false
                         showsConnectionSettings = true
-                        withAnimation(.easeOut(duration: 0.18)) { showsSidebar = false }
                     } label: {
                         HStack(spacing: 11) {
                             Circle().fill(store.statusColor).frame(width: 8, height: 8)
@@ -908,46 +867,43 @@ struct RemoteHomeView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .foregroundStyle(.primary)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 52)
                     }
-                    .buttonStyle(.plain)
                     .accessibilityIdentifier("sidebarConnection")
 
                     ShareLink(item: store.diagnosticsURL) {
                         Label("Export diagnostics", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .frame(height: 44)
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
             }
-            .frame(width: min(proxy.size.width * 0.86, 360), height: proxy.size.height)
-            .background(.background)
-            .shadow(color: .black.opacity(0.12), radius: 24, x: 8)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Plura Mobile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showsSidebar = false }
+                }
+            }
+            .accessibilityIdentifier("sidebarTitle")
+            .accessibilityLabel("Plura Mobile")
         }
     }
 
     private func sidebarNavigationRow(_ item: Surface) -> some View {
         Button {
             selectSurface(item)
-            withAnimation(.easeOut(duration: 0.18)) { showsSidebar = false }
+            showsSidebar = false
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: item.icon).frame(width: 22)
                 Text(item.rawValue)
                 Spacer()
-                if surface == item { Image(systemName: "checkmark") }
+                if surface == item {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
             }
             .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .frame(height: 48)
-            .background(surface == item ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .buttonStyle(.plain)
         .accessibilityIdentifier("sidebarSurface.\(item.rawValue.lowercased())")
     }
 

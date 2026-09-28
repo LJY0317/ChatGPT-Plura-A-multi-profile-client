@@ -103,16 +103,18 @@ final class ChatGPTPluraUITests: XCTestCase {
         app.buttons["sidebarSurface.codex"].tap()
         XCTAssertTrue(app.staticTexts["Codex"].waitForExistence(timeout: 3))
 
-        let searchButton = app.buttons["Search conversations"]
-        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
-        searchButton.tap()
-        XCTAssertTrue(app.textFields["Search conversations"].waitForExistence(timeout: 3))
-
         menuButton.tap()
         XCTAssertTrue(app.staticTexts["Connection"].waitForExistence(timeout: 3))
         app.staticTexts["Connection"].tap()
         XCTAssertTrue(app.navigationBars["Connection"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Done"].exists)
+        app.buttons["Done"].tap()
+
+        let searchButton = app.buttons["Search conversations"]
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
+        searchButton.tap()
+        let searchField = app.searchFields["Search conversations"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 3))
     }
 
     @MainActor
