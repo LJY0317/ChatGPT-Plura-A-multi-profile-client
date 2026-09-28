@@ -1243,7 +1243,7 @@ struct RemoteHomeView: View {
                         .autocorrectionDisabled()
                 }
 
-                Section("Connection") {
+                Section {
                     if !store.hasSavedPairing {
                         TextField("ws://Mac-IP:8765", text: $store.serverURL)
                             .textInputAutocapitalization(.never)
@@ -1252,9 +1252,13 @@ struct RemoteHomeView: View {
                         SecureField("Pairing token", text: $store.capabilityToken)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        Text("The token is stored in this iPhone's Keychain after the first successful connection.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        PasteButton(payloadType: String.self) { values in
+                            guard let value = values.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  !value.isEmpty
+                            else { return }
+                            store.capabilityToken = value
+                        }
+                        .accessibilityLabel("Paste pairing token")
                     } else {
                         DisclosureGroup("Advanced connection details") {
                             TextField("Host URL", text: $store.serverURL)
@@ -1270,6 +1274,12 @@ struct RemoteHomeView: View {
                             showsForgetPairingConfirmation = true
                         }
                     }
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    if !store.hasSavedPairing {
+                        Text("Use an endpoint and pairing token shown by Plura Host on your Mac. After the first successful connection, the credential is stored in this iPhone's Keychain.")
+                    }
                 }
 
                 Section("Diagnostics") {
@@ -1281,6 +1291,7 @@ struct RemoteHomeView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
