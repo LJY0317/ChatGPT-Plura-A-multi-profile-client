@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 struct RemoteCompletionNotificationPolicy {
     static func shouldNotify(isEnabled: Bool, wasBackgrounded: Bool) -> Bool {
