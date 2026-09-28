@@ -551,6 +551,52 @@ def _send_renderer_message(
 
 def _attachment_selector_javascript() -> str:
     return r"""
+  const visibleComposer = () => {
+    const selectors = [
+      '#prompt-textarea',
+      '[data-testid="composer-input"]',
+      'textarea',
+      '[contenteditable="true"][role="textbox"]',
+      '[contenteditable="true"]'
+    ];
+    for (const selector of selectors) {
+      const matches = Array.from(document.querySelectorAll(selector))
+        .filter(element => element.getClientRects().length > 0 && !element.disabled);
+      if (matches.length === 1) return matches[0];
+    }
+    return null;
+  };
+  const composerAttachmentRoots = () => {
+    const input = visibleComposer();
+    const form = input?.closest?.('form');
+    if (!form) return [];
+    return Array.from(form.querySelectorAll(
+      '[data-composer-attachments][data-visible-attachments]'
+    )).filter(element => element.getClientRects().length > 0);
+  };
+  const composerHasAnyAttachment = () => {
+    return composerAttachmentRoots().length > 0;
+  };
+  const composerHasExpectedAttachments = () => {
+    const roots = composerAttachmentRoots();
+    if (roots.length !== 1) return false;
+    const root = roots[0];
+    return attachmentNames.every(name => {
+      const matches = Array.from(root.querySelectorAll('*')).filter(element =>
+        element.children.length === 0 && (element.textContent || '').trim() === name
+      );
+      return matches.length === 1;
+    });
+  };
+  const fileInputsHaveExpectedAttachments = () => {
+    const observed = Array.from(document.querySelectorAll('input[type="file"]'))
+      .flatMap(candidate => Array.from(candidate.files || []))
+      .map(file => file.name)
+      .sort();
+    const expected = attachmentNames.slice().sort();
+    return observed.length === expected.length &&
+      observed.every((name, index) => name === expected[index]);
+  };
   const attachmentAcceptTokens = candidate => (candidate.getAttribute('accept') || '')
     .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
   const attachmentAcceptsFile = (candidate, name, mime) => {
@@ -733,7 +779,7 @@ def _composer_focus_expression(
   }}
 {attachment_selector_js}
   if (attachmentNames.length) {{
-    if (Array.from(document.querySelectorAll('input[type="file"]'))
+    if (composerHasAnyAttachment() || Array.from(document.querySelectorAll('input[type="file"]'))
       .some(candidate => (candidate.files?.length || 0) > 0)) {{
       return {{status: 'desktop-attachment-draft-present'}};
     }}
@@ -772,18 +818,22 @@ def _attachment_ready_expression(attachment_names: list[str], attachment_mime_ty
     mime_types_json = json.dumps(attachment_mime_types)
     selector_js = _attachment_selector_javascript()
     return f"""
-(() => {{
+(async () => {{
   const attachmentNames = {names_json};
   const attachmentMimeTypes = {mime_types_json};
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 {selector_js}
-  const selection = selectAttachmentInput();
-  if (selection.status !== 'ok') return {{status: selection.status}};
-  const observed = Array.from(selection.element.files || []).map(file => file.name).sort();
-  const expected = attachmentNames.slice().sort();
-  if (observed.length !== expected.length || observed.some((name, index) => name !== expected[index])) {{
-    return {{status: 'desktop-attachment-changed'}};
+  // Current Desktop consumes the selected FileList and immediately resets the
+  // hidden file input, then exposes pending files as native composer chips.
+  // Prefer that semantic composer state while retaining FileList matching for
+  // older renderer builds that keep the selection on the input element.
+  for (let i = 0; i < 60; i += 1) {{
+    if (composerHasExpectedAttachments() || fileInputsHaveExpectedAttachments()) {{
+      return {{status: 'ready'}};
+    }}
+    await sleep(50);
   }}
-  return {{status: 'ready'}};
+  return {{status: 'desktop-attachment-changed'}};
 }})()
 """
 
@@ -805,6 +855,29 @@ def _composer_submit_expression(
   const attachmentNames = {attachment_names_json};
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const normalize = value => (value || '').replace(/\\r\\n/g, '\\n').trim();
+  const composerShowsExpectedAttachments = input => {{
+    const form = input?.closest?.('form');
+    if (!form) return false;
+    const roots = Array.from(form.querySelectorAll(
+      '[data-composer-attachments][data-visible-attachments]'
+    )).filter(element => element.getClientRects().length > 0);
+    if (roots.length !== 1) return false;
+    const root = roots[0];
+    return attachmentNames.every(name => {{
+      const matches = Array.from(root.querySelectorAll('*')).filter(element =>
+        element.children.length === 0 && (element.textContent || '').trim() === name
+      );
+      return matches.length === 1;
+    }});
+  }};
+  const fileInputsShowExpectedAttachments = () => {{
+    const observed = Array.from(document.querySelectorAll('input[type="file"]'))
+      .flatMap(candidate => Array.from(candidate.files || []))
+      .map(file => file.name)
+      .sort();
+    const expected = attachmentNames.slice().sort();
+    return observed.length === expected.length && observed.every((name, index) => name === expected[index]);
+  }};
   const conversationValueMatches = value => {{
     const raw = (value || '').trim();
     return raw === conversationId ||
@@ -840,12 +913,7 @@ def _composer_submit_expression(
   if (normalize(value) !== normalize(expectedText)) return {{status: 'desktop-composer-changed'}};
 
   if (attachmentNames.length) {{
-    const observed = Array.from(document.querySelectorAll('input[type="file"]'))
-      .flatMap(candidate => Array.from(candidate.files || []))
-      .map(file => file.name)
-      .sort();
-    const expected = attachmentNames.slice().sort();
-    if (observed.length !== expected.length || observed.some((name, index) => name !== expected[index])) {{
+    if (!composerShowsExpectedAttachments(input) && !fileInputsShowExpectedAttachments()) {{
       return {{status: 'desktop-attachment-changed'}};
     }}
   }}
