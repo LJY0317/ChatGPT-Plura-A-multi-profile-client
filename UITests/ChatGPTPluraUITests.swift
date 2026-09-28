@@ -13,10 +13,15 @@ final class ChatGPTPluraUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Native Chat"].waitForExistence(timeout: 5))
+        let transcript = app.collectionViews["chatTranscript"]
+        XCTAssertTrue(transcript.waitForExistence(timeout: 3))
+
         let language = app.staticTexts["codeBlock.language"]
+        for _ in 0..<8 where !language.exists {
+            transcript.swipeDown(velocity: .fast)
+        }
         XCTAssertTrue(language.waitForExistence(timeout: 3))
         XCTAssertEqual(language.label, "SWIFT")
-        XCTAssertTrue(app.scrollViews["tableBlock"].waitForExistence(timeout: 3))
 
         let copy = app.buttons["codeBlock.copy"]
         XCTAssertTrue(copy.waitForExistence(timeout: 3))
@@ -25,11 +30,15 @@ final class ChatGPTPluraUITests: XCTestCase {
         XCTAssertTrue(app.buttons["codeBlock.copy"].waitForExistence(timeout: 3))
         XCTAssertEqual(app.buttons["codeBlock.copy"].label, "Copied")
 
-        let transcript = app.collectionViews["chatTranscript"]
-        XCTAssertTrue(transcript.waitForExistence(timeout: 3))
+        let table = app.scrollViews["tableBlock"]
+        for _ in 0..<8 where !table.exists {
+            transcript.swipeUp(velocity: .fast)
+        }
+        XCTAssertTrue(table.waitForExistence(timeout: 3))
+
         let activityTitle = app.staticTexts["activityCard.webSearch.title"]
-        for _ in 0..<6 where !activityTitle.exists {
-            transcript.swipeUp()
+        for _ in 0..<8 where !activityTitle.exists {
+            transcript.swipeUp(velocity: .fast)
         }
         XCTAssertTrue(activityTitle.waitForExistence(timeout: 3))
         XCTAssertEqual(activityTitle.label, "Web search")

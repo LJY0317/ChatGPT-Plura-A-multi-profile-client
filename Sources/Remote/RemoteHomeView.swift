@@ -364,6 +364,7 @@ struct RemoteHomeView: View {
                 systemName: "arrow.trianglehead.2.clockwise.rotate.90",
                 title: store.hasPresentationContent ? "Reconnecting to your Mac" : "Connecting to your Mac",
                 detail: store.hasPresentationContent ? "Showing saved content while Plura Host reconnects." : "Looking for your saved Plura Host connection.",
+                savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
                 showsProgress: true,
                 retryAction: nil
             )
@@ -372,6 +373,7 @@ struct RemoteHomeView: View {
                 systemName: "exclamationmark.triangle",
                 title: "Mac connection unavailable",
                 detail: store.hasPresentationContent ? "Saved content stays available. Retry when your Mac is reachable." : "Check that Plura Host is running and reachable.",
+                savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
                 showsProgress: false,
                 retryAction: { store.connect(preservingPresentation: store.hasPresentationContent) }
             )
@@ -381,6 +383,7 @@ struct RemoteHomeView: View {
                     systemName: "desktopcomputer",
                     title: "Mac is offline",
                     detail: store.hasPresentationContent ? "Showing saved content until the connection returns." : "Reconnect to load your profiles and conversations.",
+                    savedAt: store.hasPresentationContent ? store.presentationLastSyncedAt : nil,
                     showsProgress: false,
                     retryAction: { store.connect(preservingPresentation: store.hasPresentationContent) }
                 )
@@ -392,6 +395,7 @@ struct RemoteHomeView: View {
         systemName: String,
         title: String,
         detail: String,
+        savedAt: Date?,
         showsProgress: Bool,
         retryAction: (() -> Void)?
     ) -> some View {
@@ -415,6 +419,16 @@ struct RemoteHomeView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let savedAt {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                        Text("Saved")
+                        Text(savedAt, style: .relative)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityElement(children: .combine)
+                }
             }
 
             Spacer(minLength: 8)
