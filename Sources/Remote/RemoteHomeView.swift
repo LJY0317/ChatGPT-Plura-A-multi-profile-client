@@ -743,9 +743,6 @@ struct RemoteHomeView: View {
                     }
                     if !entry.canOpenRemotely {
                         Text("Mirror")
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.quaternary, in: Capsule())
                     }
                     Spacer()
                     Text(entry.updatedDate, style: .relative)
@@ -774,6 +771,8 @@ struct RemoteHomeView: View {
                     .frame(width: composerControlSize, height: composerControlSize)
             }
             .frame(minWidth: 44, minHeight: 44)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
             .disabled(!store.canSwitchThreads)
 
             TextField(surface.composerPlaceholder, text: $store.draft, axis: .vertical)
@@ -820,28 +819,31 @@ struct RemoteHomeView: View {
         Image(systemName: systemName)
             .font(.body.weight(.semibold))
             .foregroundStyle(.secondary)
+            .symbolRenderingMode(.hierarchical)
             .frame(width: libraryIconSize, height: libraryIconSize)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private var librarySkeleton: some View {
         VStack(spacing: 0) {
             ForEach(0..<6, id: \.self) { index in
                 HStack(alignment: .top, spacing: 12) {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(.quaternary)
-                        .frame(width: libraryIconSize, height: libraryIconSize)
+                    libraryRowIcon(
+                        systemName: surface == .chat
+                            ? "bubble.left"
+                            : surface == .codex ? "terminal" : "briefcase"
+                    )
                     VStack(alignment: .leading, spacing: 8) {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(.quaternary)
-                            .frame(width: index.isMultiple(of: 2) ? 190 : 235, height: 14)
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(.quaternary)
-                            .frame(width: index.isMultiple(of: 3) ? 110 : 145, height: 10)
+                        Text(index.isMultiple(of: 2) ? "Loading conversation" : "Loading conversation title")
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                        Text(index.isMultiple(of: 3) ? "Recent activity" : "Conversation details")
+                            .font(.caption)
+                            .lineLimit(1)
                     }
                     Spacer()
                 }
                 .padding(.vertical, 13)
+                .redacted(reason: .placeholder)
             }
         }
         .accessibilityHidden(true)
@@ -1127,9 +1129,10 @@ struct RemoteHomeView: View {
                         Image(systemName: "plus")
                             .font(.title3.weight(.medium))
                             .frame(width: composerControlSize, height: composerControlSize)
-                            .background(Color(uiColor: .tertiarySystemFill), in: Circle())
                     }
                     .frame(minWidth: 44, minHeight: 44)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
                     .disabled(!store.canStageCloudAttachment)
                     .accessibilityLabel("Add attachment")
                 }
