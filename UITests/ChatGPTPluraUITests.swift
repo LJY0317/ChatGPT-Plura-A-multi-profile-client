@@ -122,6 +122,17 @@ final class ChatGPTPluraUITests: XCTestCase {
         app.staticTexts["Connection"].tap()
         XCTAssertTrue(app.navigationBars["Connection"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Done"].exists)
+
+        let clearLog = app.buttons["Clear Remote Log"].firstMatch
+        for _ in 0..<4 where !clearLog.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(clearLog.waitForExistence(timeout: 3))
+        clearLog.tap()
+        XCTAssertTrue(app.staticTexts["Clear remote diagnostics?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].tap()
+
         app.buttons["Done"].tap()
 
         let searchButton = app.buttons["Search conversations"]

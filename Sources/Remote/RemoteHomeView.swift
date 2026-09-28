@@ -41,6 +41,8 @@ struct RemoteHomeView: View {
     @AppStorage("codexRemote.surface") private var surfaceRawValue = Surface.chat.rawValue
     @State private var showsSidebar = false
     @State private var showsConnectionSettings = false
+    @State private var showsForgetPairingConfirmation = false
+    @State private var showsClearDiagnosticsConfirmation = false
     @State private var isSearching = false
     @State private var searchText = ""
     @State private var didRunLaunchAutomation = false
@@ -1235,7 +1237,9 @@ struct RemoteHomeView: View {
                                     .font(.caption)
                             }
                         }
-                        Button("Forget Pairing", role: .destructive) { store.forgetPairing() }
+                        Button("Forget This Mac", role: .destructive) {
+                            showsForgetPairingConfirmation = true
+                        }
                     }
                 }
 
@@ -1243,7 +1247,9 @@ struct RemoteHomeView: View {
                     ShareLink(item: store.diagnosticsURL) {
                         Label("Export Remote Log", systemImage: "square.and.arrow.up")
                     }
-                    Button("Clear Remote Log", role: .destructive) { store.clearDiagnostics() }
+                    Button("Clear Remote Log", role: .destructive) {
+                        showsClearDiagnosticsConfirmation = true
+                    }
                 }
             }
             .navigationTitle("Connection")
@@ -1252,6 +1258,26 @@ struct RemoteHomeView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { showsConnectionSettings = false }
                 }
+            }
+            .confirmationDialog(
+                "Forget this Mac?",
+                isPresented: $showsForgetPairingConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Forget This Mac", role: .destructive) { store.forgetPairing() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Plura Mobile will remove its saved pairing credential and connection details from this iPhone. Your Mac, ChatGPT data, and Plura Desktop profiles are not changed.")
+            }
+            .confirmationDialog(
+                "Clear remote diagnostics?",
+                isPresented: $showsClearDiagnosticsConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Clear Remote Log", role: .destructive) { store.clearDiagnostics() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes Plura Mobile's local diagnostic log from this iPhone. Pairing and conversation data are not changed.")
             }
         }
     }
