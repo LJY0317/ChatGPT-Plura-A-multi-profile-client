@@ -18,6 +18,7 @@ struct ChatTranscriptView: UIViewControllerRepresentable {
 
 final class TranscriptViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     private let reuseIdentifier = "MessageCell"
+    private let maxReadableWidth: CGFloat = 820
     private var messages: [ChatMessage]
     var onLoadEarlier: (() -> Void)?
     private var collectionView: UICollectionView!
@@ -169,12 +170,21 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        let width = collectionView.bounds.width
+        let width = min(collectionView.bounds.width, maxReadableWidth)
         let rendered = cachedRender(for: messages[indexPath.item], containerWidth: width)
         return CGSize(
             width: width,
             height: rendered.height
         )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        insetForSectionAt section: Int
+    ) -> UIEdgeInsets {
+        let horizontalInset = max(0, (collectionView.bounds.width - maxReadableWidth) / 2)
+        return UIEdgeInsets(top: 12, left: horizontalInset, bottom: 12, right: horizontalInset)
     }
 
     private var isNearBottom: Bool {

@@ -6,6 +6,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct RemoteHomeView: View {
+    private let maxReadableContentWidth: CGFloat = 820
+
     private enum Surface: String, CaseIterable, Identifiable {
         case chat = "Chat"
         case work = "Work"
@@ -232,6 +234,8 @@ struct RemoteHomeView: View {
                 .accessibilityLabel("Fast Chat requires one normal ChatGPT relaunch")
             }
         }
+        .frame(maxWidth: maxReadableContentWidth)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .padding(.bottom, 8)
@@ -406,6 +410,8 @@ struct RemoteHomeView: View {
                     .disabled(store.isConnecting)
             }
         }
+        .frame(maxWidth: maxReadableContentWidth)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 20)
         .padding(.vertical, 9)
         .background(Color(uiColor: .secondarySystemBackground))
@@ -420,20 +426,16 @@ struct RemoteHomeView: View {
                 conversationView
             }
         } else {
-            VStack(spacing: 16) {
-                Spacer()
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.tertiary)
-                Text(store.hasSavedPairing ? "Your Mac is unavailable" : "Connect your Mac")
-                    .font(.title3.weight(.semibold))
+            ContentUnavailableView {
+                Label(
+                    store.hasSavedPairing ? "Your Mac is unavailable" : "Connect your Mac",
+                    systemImage: "desktopcomputer"
+                )
+            } description: {
                 Text(store.hasSavedPairing
                     ? "Your profiles and conversations will appear automatically when Plura Host is reachable."
                     : "Pair Plura Mobile with your desktop host once. Connection details stay out of the way after setup.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+            } actions: {
                 Button(store.hasSavedPairing ? "Retry Connection" : "Connection Settings") {
                     if store.hasSavedPairing {
                         store.connect()
@@ -442,14 +444,14 @@ struct RemoteHomeView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+
                 if store.hasSavedPairing {
                     Button("Connection Settings") { showsConnectionSettings = true }
-                        .font(.subheadline)
                 }
-                Spacer()
             }
+            .frame(maxWidth: maxReadableContentWidth)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(24)
+            .padding(.horizontal, 24)
         }
     }
 
@@ -457,6 +459,8 @@ struct RemoteHomeView: View {
         List {
             if surface != .chat {
                 surfaceContext
+                    .frame(maxWidth: maxReadableContentWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -466,6 +470,8 @@ struct RemoteHomeView: View {
 
             if let error = store.lastError {
                 errorNotice(error)
+                    .frame(maxWidth: maxReadableContentWidth)
+                    .frame(maxWidth: .infinity)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -483,6 +489,8 @@ struct RemoteHomeView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if store.isConnected {
                 newThreadComposer
+                    .frame(maxWidth: maxReadableContentWidth)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .padding(.bottom, 8)
@@ -639,7 +647,8 @@ struct RemoteHomeView: View {
                     .foregroundStyle(.tertiary)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: maxReadableContentWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
         }
@@ -680,7 +689,8 @@ struct RemoteHomeView: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: maxReadableContentWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
 
@@ -917,12 +927,18 @@ struct RemoteHomeView: View {
                         errorNotice(error)
                             .padding(.horizontal, 18)
                             .padding(.top, 8)
+                            .frame(maxWidth: maxReadableContentWidth)
+                            .frame(maxWidth: .infinity)
                     }
                     cloudMirrorBar
+                        .frame(maxWidth: maxReadableContentWidth)
+                        .frame(maxWidth: .infinity)
                         .padding(.horizontal, 18)
                         .padding(.top, 8)
                     if store.cloudChatCanSendText {
                         remoteComposer
+                            .frame(maxWidth: maxReadableContentWidth)
+                            .frame(maxWidth: .infinity)
                             .padding(.horizontal, 18)
                             .padding(.bottom, 12)
                             .padding(.top, 6)
@@ -936,6 +952,8 @@ struct RemoteHomeView: View {
                 }
             } else {
                 remoteComposer
+                    .frame(maxWidth: maxReadableContentWidth)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 12)
                     .padding(.top, 8)
