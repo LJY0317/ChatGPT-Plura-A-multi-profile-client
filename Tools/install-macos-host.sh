@@ -8,14 +8,13 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PYTHON=$(command -v python3 || true)
 PLURA_DESKTOP_CLI="$HOME/Library/Application Support/PluraDesktop/plura-desktop"
-LEGACY_DESKTOP_CLI="$HOME/Library/Application Support/CodexMultiProfileLauncher/codex-profile"
 OFFICIAL_CHATGPT='/Applications/ChatGPT.app'
 
 if [ -z "$PYTHON" ]; then
     echo 'python3 is required to install Plura Host.' >&2
     exit 1
 fi
-if [ ! -x "$PLURA_DESKTOP_CLI" ] && [ ! -x "$LEGACY_DESKTOP_CLI" ]; then
+if [ ! -x "$PLURA_DESKTOP_CLI" ]; then
     echo 'Plura Desktop is not installed or its control CLI is unavailable.' >&2
     echo "Expected: $PLURA_DESKTOP_CLI" >&2
     exit 1

@@ -152,38 +152,21 @@ class HostPlatform:
     credential_store: CredentialStore
 
 
-def _prefer_existing_control_cli(canonical: Path, legacy: Path) -> Path:
-    if canonical.is_file():
-        return canonical
-    if legacy.is_file():
-        return legacy
-    return canonical
-
-
 def current_platform() -> HostPlatform:
     home = Path.home()
     if sys.platform == "darwin":
         state = home / "Library/Application Support/ChatGPT Plura — A multi-profile client/host"
-        cli = _prefer_existing_control_cli(
-            home / "Library/Application Support/PluraDesktop/plura-desktop",
-            home / "Library/Application Support/CodexMultiProfileLauncher/codex-profile",
-        )
+        cli = home / "Library/Application Support/PluraDesktop/plura-desktop"
         return HostPlatform("macos", cli, state, MacOSCredentialStore())
     if sys.platform == "win32":
         local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
         state = local / "ChatGPT Plura — A multi-profile client/host"
-        cli = _prefer_existing_control_cli(
-            local / "PluraDesktop/plura-desktop.cmd",
-            local / "CodexMultiProfileLauncher/codex-profile.cmd",
-        )
+        cli = local / "PluraDesktop/plura-desktop.cmd"
         return HostPlatform("windows", cli, state, WindowsCredentialStore(state))
     if sys.platform.startswith("linux"):
         state_home = Path(os.environ.get("XDG_STATE_HOME", home / ".local/state"))
         state = state_home / "ChatGPT Plura — A multi-profile client/host"
-        cli = _prefer_existing_control_cli(
-            state_home / "PluraDesktop/plura-desktop",
-            state_home / "CodexMultiProfileLauncher/codex-profile",
-        )
+        cli = state_home / "PluraDesktop/plura-desktop"
         return HostPlatform("linux", cli, state, LinuxCredentialStore())
     raise RuntimeError(f"Unsupported host platform: {sys.platform}")
 
