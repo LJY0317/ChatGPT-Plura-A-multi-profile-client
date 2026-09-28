@@ -283,9 +283,8 @@ struct RemoteHomeView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
                 .accessibilityLabel("Fast Chat requires one normal ChatGPT relaunch")
             }
         }
@@ -314,9 +313,8 @@ struct RemoteHomeView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 42)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 4)
+            .frame(minHeight: 36)
             .accessibilityElement(children: .combine)
         }
     }
@@ -384,10 +382,9 @@ struct RemoteHomeView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 42)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 4)
+            .frame(minHeight: 36)
+            .contentShape(Rectangle())
             .accessibilityElement(children: .combine)
         }
     }
@@ -788,20 +785,11 @@ struct RemoteHomeView: View {
             Button(action: store.startNewThreadFromDraft) {
                 Image(systemName: "arrow.up")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(
-                        store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.secondary
-                            : Color.white
-                    )
                     .frame(width: composerControlSize, height: composerControlSize)
-                    .background(
-                        store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color(uiColor: .tertiarySystemFill)
-                            : Color.accentColor,
-                        in: Circle()
-                    )
             }
             .frame(minWidth: 44, minHeight: 44)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.circle)
             .disabled(store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.canSwitchThreads)
         }
         .padding(.horizontal, 12)
@@ -1157,20 +1145,16 @@ struct RemoteHomeView: View {
                         if store.isSendingCloudMessage {
                             ProgressView()
                                 .controlSize(.small)
-                                .tint(.white)
                         } else {
                             Image(systemName: "arrow.up")
                                 .font(.body.weight(.bold))
-                                .foregroundStyle(store.canSend ? .white : .secondary)
                         }
                     }
                     .frame(width: composerControlSize, height: composerControlSize)
-                    .background(
-                        store.canSend ? Color.accentColor : Color(uiColor: .tertiarySystemFill),
-                        in: Circle()
-                    )
                 }
                 .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.circle)
                 .disabled(!store.canSend)
                 .accessibilityLabel("Send message")
             }

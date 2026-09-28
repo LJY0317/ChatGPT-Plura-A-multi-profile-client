@@ -135,7 +135,9 @@ final class ChatGPTPluraUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Clear remote diagnostics?"].waitForExistence(timeout: 3))
         let clearActions = app.buttons.matching(identifier: "Clear Remote Log").allElementsBoundByAccessibilityElement
         XCTAssertFalse(clearActions.isEmpty)
-        clearActions.last?.tap()
+        let hittableClearAction = clearActions.first(where: \.isHittable)
+        XCTAssertNotNil(hittableClearAction)
+        hittableClearAction?.tap()
 
         app.buttons["Done"].tap()
 
