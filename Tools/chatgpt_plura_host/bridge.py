@@ -276,6 +276,14 @@ class BridgeServer:
                 await send_response(writer, "401 Unauthorized")
                 return
 
+            if method == "GET" and path == "/ping":
+                await send_response(
+                    writer,
+                    "200 OK",
+                    body=json.dumps({"contractVersion": 1}, sort_keys=True).encode("utf-8"),
+                )
+                return
+
             if method == "GET" and path == "/targets":
                 await send_response(writer, "200 OK", body=self._targets_payload())
                 return

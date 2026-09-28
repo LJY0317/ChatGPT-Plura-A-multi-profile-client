@@ -1140,6 +1140,33 @@ class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["contractVersion"], 1)
         self.assertEqual(payload["targets"][0]["activationState"], "restart-required")
 
+    async def test_ping_requires_capability_and_does_not_refresh_runtime_or_endpoints(self):
+        runtime_refresh_calls = 0
+        endpoint_calls = 0
+        original_targets = self.multi.targets
+
+        def targets(*, refresh=False):
+            nonlocal runtime_refresh_calls
+            if refresh:
+                runtime_refresh_calls += 1
+            return original_targets(refresh=refresh)
+
+        def endpoint_provider():
+            nonlocal endpoint_calls
+            endpoint_calls += 1
+            return [ConnectionEndpoint("lan", "Local network", "ws://192.168.77.2:8765", 10)]
+
+        self.multi.targets = targets
+        self.bridge.endpoint_provider = endpoint_provider
+
+        status, _ = await self.request("/ping")
+        self.assertEqual(status, 401)
+        status, body = await self.request("/ping", "Bearer capability")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["contractVersion"], 1)
+        self.assertEqual(runtime_refresh_calls, 0)
+        self.assertEqual(endpoint_calls, 0)
+
     async def test_chat_prepare_requires_capability_and_forwards_explicit_relaunch(self):
         calls = []
 

@@ -20,6 +20,10 @@ private struct RemoteConnectionInfo: Decodable {
     let endpoints: [RemoteConnectionEndpoint]
 }
 
+private struct RemoteProbeResponse: Decodable {
+    let contractVersion: Int
+}
+
 struct RemoteChatCatalogEntry: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let title: String
@@ -179,6 +183,17 @@ struct RemoteTarget: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
+struct RemoteReconnectPolicy {
+    static func canUseCachedTarget(
+        _ target: RemoteTarget?,
+        hasSavedPairing: Bool,
+        forceTargetDiscovery: Bool
+    ) -> Bool {
+        guard hasSavedPairing, !forceTargetDiscovery, let target else { return false }
+        return target.activationState == .ready && !target.route.isEmpty
+    }
+}
+
 private struct RemoteTargetsResponse: Decodable {
     let contractVersion: Int
     let targets: [RemoteTarget]
@@ -307,6 +322,7 @@ struct RemoteHostClient: Sendable {
     func fetchConnectionInfo(
         baseURL: String,
         token: String,
+        timeout: TimeInterval = 4,
         allowTrustedOverlayPlaintext: Bool = false
     ) async throws -> [RemoteConnectionEndpoint] {
         let url = try httpURL(
@@ -315,13 +331,33 @@ struct RemoteHostClient: Sendable {
             allowTrustedOverlayPlaintext: allowTrustedOverlayPlaintext
         )
         var request = URLRequest(url: url)
-        request.timeoutInterval = 4
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(try normalizedToken(token))", forHTTPHeaderField: "Authorization")
         let (data, response) = try await ephemeralSession().data(for: request)
         try validate(response: response, data: data)
         let decoded = try JSONDecoder().decode(RemoteConnectionInfo.self, from: data)
         guard decoded.contractVersion == 1 else { throw RemoteHostError.unsupportedContract }
         return decoded.endpoints.sorted { $0.priority < $1.priority }
+    }
+
+    func probeHost(
+        baseURL: String,
+        token: String,
+        timeout: TimeInterval = 2.5,
+        allowTrustedOverlayPlaintext: Bool = false
+    ) async throws {
+        let url = try httpURL(
+            baseURL: baseURL,
+            path: "/ping",
+            allowTrustedOverlayPlaintext: allowTrustedOverlayPlaintext
+        )
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
+        request.setValue("Bearer \(try normalizedToken(token))", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await ephemeralSession().data(for: request)
+        try validate(response: response, data: data)
+        let decoded = try JSONDecoder().decode(RemoteProbeResponse.self, from: data)
+        guard decoded.contractVersion == 1 else { throw RemoteHostError.unsupportedContract }
     }
 
     func fetchChatCatalog(

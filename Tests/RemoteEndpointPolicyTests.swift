@@ -322,6 +322,42 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         XCTAssertEqual(target.menuTitle, "ChatGPT Profile 2")
     }
 
+    func testReconnectPolicyUsesReadyCachedTargetUnlessDiscoveryIsForced() throws {
+        let readyData = Data(#"{"id":"profile-2","displayName":"ChatGPT Profile 2","role":"managed","route":"/targets/profile-2/ws","activationState":"ready","chatMirrorState":"ready"}"#.utf8)
+        let ready = try JSONDecoder().decode(RemoteTarget.self, from: readyData)
+        let unavailableData = Data(#"{"id":"profile-2","displayName":"ChatGPT Profile 2","role":"managed","route":"/targets/profile-2/ws","activationState":"unavailable","chatMirrorState":"unavailable"}"#.utf8)
+        let unavailable = try JSONDecoder().decode(RemoteTarget.self, from: unavailableData)
+
+        XCTAssertTrue(
+            RemoteReconnectPolicy.canUseCachedTarget(
+                ready,
+                hasSavedPairing: true,
+                forceTargetDiscovery: false
+            )
+        )
+        XCTAssertFalse(
+            RemoteReconnectPolicy.canUseCachedTarget(
+                ready,
+                hasSavedPairing: true,
+                forceTargetDiscovery: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteReconnectPolicy.canUseCachedTarget(
+                unavailable,
+                hasSavedPairing: true,
+                forceTargetDiscovery: false
+            )
+        )
+        XCTAssertFalse(
+            RemoteReconnectPolicy.canUseCachedTarget(
+                ready,
+                hasSavedPairing: false,
+                forceTargetDiscovery: false
+            )
+        )
+    }
+
     func testReadyTargetSurfacesRendererRelaunchCapabilitySeparately() throws {
         let data = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"ready","chatMirrorState":"restart-required"}"#.utf8)
         let target = try JSONDecoder().decode(RemoteTarget.self, from: data)

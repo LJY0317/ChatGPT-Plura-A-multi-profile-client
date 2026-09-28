@@ -121,6 +121,19 @@ The mobile client uses stale-while-revalidate behavior:
 
 Conversation caches are bounded per target and must be evicted by recency/size. Credentials, pending write transactions, and staged attachment IDs are never persisted as presentation cache.
 
+## Reconnect fast path
+
+Pairing identity and transport lifetime are separate concerns. The iOS Keychain keeps the long-lived Host capability credential, last successful Host URL, selected target ID, and private-network endpoint hints. A suspended or replaced WebSocket does not invalidate that pairing.
+
+When the app needs to reconnect and the saved target was previously `ready`, it first uses a low-cost path:
+
+1. race the last successful Host endpoint plus saved LAN/private-overlay endpoints with a small stagger;
+2. authenticate an inexpensive `/ping` that does not refresh Desktop targets or enumerate overlay providers;
+3. attach directly to the cached opaque target WebSocket route;
+4. reuse the Host runtime's canonical session cache when it is still valid.
+
+Only a stale/unready cached target, unreachable trusted endpoint set, or failed cached-route handshake falls back to full `/targets` discovery. That fallback is allowed to refresh the canonical Desktop target/session contract because it is recovery, not the normal foreground path. This design avoids both persistent background polling and repeated expensive Desktop discovery while preserving fail-closed recovery when the Mac/target really changed. A Host or Desktop restart can still make the first recovery slower while canonical session state is rebuilt; ordinary app switching should not repeatedly pay that cost.
+
 ## Completion notifications
 
 Completion notification policy is event-driven. The iOS client may schedule a generic local notification only when the user has explicitly enabled notifications, the app has entered the background, and the canonical Work/Codex stream delivers `turn/completed`. Transient inactive states such as system overlays do not qualify. The notification deliberately omits task, thread, and message contents so lock-screen delivery does not expand Plura's data exposure.

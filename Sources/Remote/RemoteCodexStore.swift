@@ -55,6 +55,13 @@ final class RemoteCodexStore {
         let errorDescription: String?
     }
 
+    private struct EndpointProbeAttempt: Sendable {
+        let candidate: EndpointCandidate
+        let reachable: Bool
+        let remoteError: RemoteHostError?
+        let errorDescription: String?
+    }
+
     private struct PendingApprovalRequest {
         let id: CodexRequestID
         let method: String
@@ -145,6 +152,7 @@ final class RemoteCodexStore {
     private var connectTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempt = 0
+    private var fastPathConnectingGeneration: Int?
     private var trustedOverlayPlaintext = false
     private var threadID: String?
     private var threadCanAcceptDirectInput: Bool?
@@ -501,18 +509,29 @@ final class RemoteCodexStore {
         }
     }
 
-    func connect(preservingPresentation: Bool = false) {
+    func connect(
+        preservingPresentation: Bool = false,
+        forceTargetDiscovery: Bool = false
+    ) {
         guard !isConnecting else { return }
         connectionGeneration += 1
         let generation = connectionGeneration
         connectTask?.cancel()
         connectTask = Task { [weak self] in
             guard let self else { return }
-            await self.connectAsync(preservingPresentation: preservingPresentation, requestedGeneration: generation)
+            await self.connectAsync(
+                preservingPresentation: preservingPresentation,
+                requestedGeneration: generation,
+                forceTargetDiscovery: forceTargetDiscovery
+            )
         }
     }
 
-    func connectAsync(preservingPresentation: Bool = false, requestedGeneration: Int? = nil) async {
+    func connectAsync(
+        preservingPresentation: Bool = false,
+        requestedGeneration: Int? = nil,
+        forceTargetDiscovery: Bool = false
+    ) async {
         let generation: Int
         if let supplied = requestedGeneration {
             generation = supplied
@@ -547,6 +566,58 @@ final class RemoteCodexStore {
         do {
             let token = capabilityToken.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { throw RemoteHostError.missingPairingToken }
+
+            if RemoteReconnectPolicy.canUseCachedTarget(
+                selectedTarget,
+                hasSavedPairing: hasSavedPairing,
+                forceTargetDiscovery: forceTargetDiscovery
+            ), let cachedTarget = selectedTarget {
+                do {
+                    let endpoint = try await probeConnectionEndpoint(token: token)
+                    try Task.checkCancellation()
+                    guard isCurrentConnection(generation) else { return }
+
+                    serverURL = endpoint.baseURL
+                    trustedOverlayPlaintext = endpoint.trustedOverlayPlaintext
+                    UserDefaults.standard.set(serverURL, forKey: "codexRemote.serverURL")
+                    UserDefaults.standard.set(cachedTarget.id, forKey: "codexRemote.targetID")
+                    UserDefaults.standard.set(workingDirectory, forKey: "codexRemote.workingDirectory")
+
+                    let url = try hostClient.webSocketURL(
+                        baseURL: serverURL,
+                        target: cachedTarget,
+                        allowTrustedOverlayPlaintext: endpoint.trustedOverlayPlaintext
+                    )
+                    diagnostics.record("connection.fastPath.selected", fields: [
+                        "targetID": cachedTarget.id,
+                        "endpointKind": endpoint.kind,
+                        "endpointCount": connectionEndpoints.count
+                    ])
+                    startCodexConnection(
+                        url: url,
+                        token: token,
+                        generation: generation,
+                        fastPath: true
+                    )
+                    if preservingPresentation, let cachedThreadID {
+                        threadID = cachedThreadID
+                        activeThreadTitle = cachedThreadTitle
+                        selectedModel = cachedThreadModel
+                    }
+                    if isCurrentConnection(generation) {
+                        connectTask = nil
+                    }
+                    return
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    diagnostics.record("connection.fastPath.failed", level: .warning, fields: [
+                        "targetID": cachedTarget.id,
+                        "error": String(describing: error)
+                    ])
+                }
+            }
+
             let connection = try await discoverTargets(token: token)
             try Task.checkCancellation()
             guard isCurrentConnection(generation) else { return }
@@ -606,27 +677,11 @@ final class RemoteCodexStore {
             try Task.checkCancellation()
             guard isCurrentConnection(generation) else { return }
 
-            codexClient.connect(
+            startCodexConnection(
                 url: url,
                 token: token,
-                onResponse: { [weak self] id, object in self?.handleResponse(id: id, object: object) },
-                onNotification: { [weak self] method, params in self?.handleNotification(method: method, params: params) },
-                onServerRequest: { [weak self] id, method, params in
-                    self?.handleServerRequest(id: id, method: method, params: params)
-                },
-                onFailure: { [weak self] error in self?.handleTransportFailure(error, generation: generation) }
-            )
-            sendRequest(
-                method: "initialize",
-                params: [
-                    "clientInfo": [
-                        "name": "PluraMobile",
-                        "title": "Plura Mobile",
-                        "version": "0.1"
-                    ],
-                    "capabilities": ["experimentalApi": true, "requestAttestation": false]
-                ],
-                kind: .initialize
+                generation: generation,
+                fastPath: false
             )
             if preservingPresentation, let cachedThreadID {
                 threadID = cachedThreadID
@@ -796,25 +851,136 @@ final class RemoteCodexStore {
         }
     }
 
-    private func discoverTargets(
-        token: String
-    ) async throws -> (baseURL: String, targets: [RemoteTarget], trustedOverlayPlaintext: Bool) {
-        var candidates: [EndpointCandidate] = []
-        let current = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !current.isEmpty {
-            let saved = connectionEndpoints.first(where: { $0.url == current })
-            candidates.append(EndpointCandidate(
-                url: current,
-                kind: saved?.kind ?? "manual",
-                trustedOverlayPlaintext: saved.map { $0.kind != "lan" } ?? false
-            ))
-        }
-        candidates.append(contentsOf: connectionEndpoints.sorted { $0.priority < $1.priority }.map {
+    private func startCodexConnection(
+        url: URL,
+        token: String,
+        generation: Int,
+        fastPath: Bool
+    ) {
+        fastPathConnectingGeneration = fastPath ? generation : nil
+        codexClient.connect(
+            url: url,
+            token: token,
+            onResponse: { [weak self] id, object in self?.handleResponse(id: id, object: object) },
+            onNotification: { [weak self] method, params in self?.handleNotification(method: method, params: params) },
+            onServerRequest: { [weak self] id, method, params in
+                self?.handleServerRequest(id: id, method: method, params: params)
+            },
+            onFailure: { [weak self] error in self?.handleTransportFailure(error, generation: generation) }
+        )
+        sendRequest(
+            method: "initialize",
+            params: [
+                "clientInfo": [
+                    "name": "PluraMobile",
+                    "title": "Plura Mobile",
+                    "version": "0.1"
+                ],
+                "capabilities": ["experimentalApi": true, "requestAttestation": false]
+            ],
+            kind: .initialize
+        )
+    }
+
+    private func endpointCandidates() throws -> [EndpointCandidate] {
+        var candidates = connectionEndpoints.sorted { $0.priority < $1.priority }.map {
             EndpointCandidate(url: $0.url, kind: $0.kind, trustedOverlayPlaintext: $0.kind != "lan")
-        })
+        }
+        let current = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !current.isEmpty, !connectionEndpoints.contains(where: { $0.url == current }) {
+            candidates.insert(EndpointCandidate(
+                url: current,
+                kind: "manual",
+                trustedOverlayPlaintext: false
+            ), at: 0)
+        }
         var seen = Set<String>()
         candidates = candidates.filter { seen.insert($0.url).inserted }
         guard !candidates.isEmpty else { throw RemoteHostError.invalidBaseURL }
+        return candidates
+    }
+
+    private func probeConnectionEndpoint(
+        token: String
+    ) async throws -> (baseURL: String, trustedOverlayPlaintext: Bool, kind: String) {
+        let candidates = try endpointCandidates()
+        diagnostics.record("connection.fastPath.endpointRace.started", fields: [
+            "candidateCount": candidates.count,
+            "kinds": candidates.map(\.kind)
+        ])
+
+        return try await withThrowingTaskGroup(of: EndpointProbeAttempt.self) { group in
+            for (index, candidate) in candidates.enumerated() {
+                group.addTask {
+                    if index > 0 {
+                        try await Task.sleep(for: .milliseconds(125 * index))
+                    }
+                    do {
+                        try await RemoteHostClient().probeHost(
+                            baseURL: candidate.url,
+                            token: token,
+                            timeout: 2.5,
+                            allowTrustedOverlayPlaintext: candidate.trustedOverlayPlaintext
+                        )
+                        return EndpointProbeAttempt(
+                            candidate: candidate,
+                            reachable: true,
+                            remoteError: nil,
+                            errorDescription: nil
+                        )
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch let error as RemoteHostError {
+                        return EndpointProbeAttempt(
+                            candidate: candidate,
+                            reachable: false,
+                            remoteError: error,
+                            errorDescription: String(describing: error)
+                        )
+                    } catch {
+                        return EndpointProbeAttempt(
+                            candidate: candidate,
+                            reachable: false,
+                            remoteError: nil,
+                            errorDescription: String(describing: error)
+                        )
+                    }
+                }
+            }
+
+            var meaningfulRemoteError: RemoteHostError?
+            while let attempt = try await group.next() {
+                if attempt.reachable {
+                    group.cancelAll()
+                    diagnostics.record("connection.fastPath.endpoint.selected", fields: [
+                        "kind": attempt.candidate.kind,
+                        "raced": candidates.count > 1
+                    ])
+                    return (
+                        attempt.candidate.url,
+                        attempt.candidate.trustedOverlayPlaintext,
+                        attempt.candidate.kind
+                    )
+                }
+                if meaningfulRemoteError == nil,
+                   let remoteError = attempt.remoteError,
+                   remoteError.shouldSurfaceAfterEndpointRace {
+                    meaningfulRemoteError = remoteError
+                }
+                diagnostics.record("connection.fastPath.endpoint.failed", level: .debug, fields: [
+                    "kind": attempt.candidate.kind,
+                    "error": attempt.errorDescription ?? "unknown"
+                ])
+            }
+            if let meaningfulRemoteError { throw meaningfulRemoteError }
+            throw RemoteHostError.httpStatus(503, "host-unreachable")
+        }
+    }
+
+    private func discoverTargets(
+        token: String
+    ) async throws -> (baseURL: String, targets: [RemoteTarget], trustedOverlayPlaintext: Bool) {
+        let candidates = try endpointCandidates()
 
         diagnostics.record("connection.endpointRace.started", fields: [
             "candidateCount": candidates.count,
@@ -2038,6 +2204,7 @@ final class RemoteCodexStore {
 
         switch pending.kind {
         case .initialize:
+            fastPathConnectingGeneration = nil
             codexClient.sendNotification(method: "initialized")
             persistPairingIfNeeded()
             state = .ready
@@ -2466,7 +2633,20 @@ final class RemoteCodexStore {
             "message": message
         ])
         switch kind {
-        case .initialize: state = .failed(message)
+        case .initialize:
+            if fastPathConnectingGeneration == connectionGeneration {
+                fastPathConnectingGeneration = nil
+                diagnostics.record("connection.fastPath.initializeFailed", level: .warning, fields: [
+                    "message": message
+                ])
+                state = .disconnected
+                connect(
+                    preservingPresentation: hasPresentationContent,
+                    forceTargetDiscovery: true
+                )
+            } else {
+                state = .failed(message)
+            }
         case .threadList: isLoadingThreads = false; lastError = message
         case .modelList: isLoadingModels = false; lastError = message
         case .threadStart:
@@ -2569,6 +2749,7 @@ final class RemoteCodexStore {
             "pendingRequestCount": pendingRequests.count,
             "threadID": threadID ?? ""
         ])
+        fastPathConnectingGeneration = nil
         codexClient.disconnect(reason: reason)
         approvalPrompt = nil
         activeApprovalRequest = nil
@@ -2605,6 +2786,16 @@ final class RemoteCodexStore {
                 "generation": generation,
                 "currentGeneration": connectionGeneration
             ])
+            return
+        }
+        if fastPathConnectingGeneration == generation {
+            fastPathConnectingGeneration = nil
+            diagnostics.record("connection.fastPath.transportFailed", level: .warning, fields: errorFields(error))
+            state = .disconnected
+            connect(
+                preservingPresentation: hasPresentationContent,
+                forceTargetDiscovery: true
+            )
             return
         }
         diagnostics.record("connection.transport.failed", level: .error, fields: errorFields(error))
