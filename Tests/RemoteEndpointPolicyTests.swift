@@ -47,7 +47,7 @@ final class RemoteEndpointPolicyTests: XCTestCase {
     func testPresentationSnapshotPersistsBoundedOfflineState() throws {
         let target = try JSONDecoder().decode(
             RemoteTarget.self,
-            from: Data(#"{"id":"profile-2","displayName":"ChatGPT Profile 2","route":"/targets/profile-2/ws","activationState":"ready"}"#.utf8)
+            from: Data(#"{"id":"profile-2","displayName":"ChatGPT Profile 2","role":"managed","route":"/targets/profile-2/ws","activationState":"ready","chatMirrorState":"ready"}"#.utf8)
         )
         let chatEntry = try JSONDecoder().decode(
             RemoteChatCatalogEntry.self,
@@ -213,7 +213,7 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         XCTAssertEqual(transcript.capabilities?.attachments, false)
     }
 
-    func testChatTranscriptKeepsLegacyMessagesWhenSemanticItemsAreAbsent() throws {
+    func testChatTranscriptKeepsMessagesWhenSemanticItemsAreAbsent() throws {
         let data = Data(#"""
         {
           "contractVersion":1,
@@ -221,7 +221,7 @@ final class RemoteEndpointPolicyTests: XCTestCase {
           "title":"Project chat",
           "projectId":null,
           "projectName":null,
-          "source":"desktop-accessibility",
+          "source":"desktop-renderer",
           "messages":[{"role":"assistant","text":"hello","segments":["hello"]}],
           "activity":"idle",
           "isPartial":false,
@@ -277,7 +277,7 @@ final class RemoteEndpointPolicyTests: XCTestCase {
     }
 
     func testDefaultTargetUsesProfileOnePresentationName() throws {
-        let data = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"restart-required"}"#.utf8)
+        let data = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"restart-required","chatMirrorState":"restart-required"}"#.utf8)
         let target = try JSONDecoder().decode(RemoteTarget.self, from: data)
 
         XCTAssertTrue(target.isPrimaryTarget)
@@ -288,7 +288,7 @@ final class RemoteEndpointPolicyTests: XCTestCase {
     }
 
     func testManagedTargetKeepsUpstreamDisplayName() throws {
-        let data = Data(#"{"id":"local.example.profile2","displayName":"ChatGPT Profile 2","role":"managed","route":"/targets/profile2/ws","activationState":"ready"}"#.utf8)
+        let data = Data(#"{"id":"local.example.profile2","displayName":"ChatGPT Profile 2","role":"managed","route":"/targets/profile2/ws","activationState":"ready","chatMirrorState":"ready"}"#.utf8)
         let target = try JSONDecoder().decode(RemoteTarget.self, from: data)
 
         XCTAssertFalse(target.isPrimaryTarget)
@@ -298,23 +298,14 @@ final class RemoteEndpointPolicyTests: XCTestCase {
     }
 
     func testReadyTargetSurfacesRendererRelaunchCapabilitySeparately() throws {
-        let data = Data(#"{"id":"default","displayName":"ChatGPT","route":"/targets/default/ws","activationState":"ready","chatMirrorState":"restart-required","rendererCDPState":"ready"}"#.utf8)
+        let data = Data(#"{"id":"default","displayName":"ChatGPT","role":"default","route":"/targets/default/ws","activationState":"ready","chatMirrorState":"restart-required"}"#.utf8)
         let target = try JSONDecoder().decode(RemoteTarget.self, from: data)
 
         XCTAssertEqual(target.presentationName, "ChatGPT Profile 1")
         XCTAssertEqual(target.activationState, .ready)
         XCTAssertEqual(target.chatMirrorState, .restartRequired)
-        XCTAssertEqual(target.rendererCDPState, .ready)
         XCTAssertTrue(target.chatMirrorNeedsRelaunch)
         XCTAssertTrue(target.menuTitle.contains("Chat relaunch recommended"))
-    }
-
-    func testLegacyRendererStateRemainsAChatMirrorCompatibilityFallback() throws {
-        let data = Data(#"{"id":"default","displayName":"ChatGPT","route":"/targets/default/ws","activationState":"ready","rendererCDPState":"restart-required"}"#.utf8)
-        let target = try JSONDecoder().decode(RemoteTarget.self, from: data)
-
-        XCTAssertNil(target.chatMirrorState)
-        XCTAssertTrue(target.chatMirrorNeedsRelaunch)
     }
 
     func testAllowsPrivateOverlayPlaintextHosts() throws {

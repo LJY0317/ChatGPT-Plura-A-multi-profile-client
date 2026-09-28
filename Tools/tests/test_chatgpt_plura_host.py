@@ -22,16 +22,6 @@ sys.path.insert(0, str(TOOLS))
 
 from chatgpt_plura_host.bridge import BridgeServer, PairingState
 from chatgpt_plura_host.attachments import ChatAttachmentStore
-from chatgpt_plura_host.accessibility import (
-    ChatTranscriptUnavailable,
-    _Message,
-    _conversation_is_current,
-    _desktop_windows,
-    _ensure_web_accessibility,
-    _render_messages,
-    _title_matches,
-    _wait_for_desktop_window,
-)
 from chatgpt_plura_host.catalog import _read_catalog
 from chatgpt_plura_host.plura_desktop import PluraDesktopClient, SharedSession, Target
 from chatgpt_plura_host.network import (
@@ -42,6 +32,7 @@ from chatgpt_plura_host.network import (
 from chatgpt_plura_host.platform import _linux_lan_ipv4_from_ip, _macos_lan_ipv4_from_ifconfig
 from chatgpt_plura_host.renderer import (
     ChatRendererUnavailable,
+    ChatTranscriptUnavailable,
     TargetChatComposerProvider,
     TargetChatTranscriptProvider,
     _attachment_input_expression,
@@ -66,34 +57,76 @@ def write_fake_control(
     *,
     session_payload: dict[str, object] | None = None,
     launch_makes_ready: bool = False,
+    normalize_contract: bool = True,
 ) -> Path:
+    target_payload = json.loads(json.dumps(target_payload))
+    if normalize_contract:
+        raw_targets = target_payload.get("targets")
+        if isinstance(raw_targets, list):
+            for index, item in enumerate(raw_targets):
+                if not isinstance(item, dict):
+                    continue
+                target_id = item.get("id")
+                session_state = item.get("sessionState", "unavailable")
+                item.setdefault("role", "default" if target_id == "default" else "managed")
+                item.setdefault("managed", target_id != "default")
+                item.setdefault("ownership", "official-desktop-profile")
+                item.setdefault("backendPolicy", "single-authoritative-profile-runtime")
+                item.setdefault("state", "running" if session_state in {"ready", "restart-required"} else "stopped")
+                item.setdefault("sharedAppServerSupported", session_state != "unsupported")
+                item.setdefault("responsesRouteSupported", session_state != "unsupported")
+                item.setdefault("rendererCDPSupported", True)
+                item.setdefault(
+                    "rendererCDPState",
+                    "restart-required" if session_state == "ready" else session_state,
+                )
     script = root / "fake-control.py"
     first_target = target_payload["targets"][0]  # type: ignore[index]
     target_id = first_target["id"]  # type: ignore[index]
-    initial_session = session_payload or {
+    initial_session = dict(session_payload or {
         "contractVersion": 1,
         "targetID": target_id,
         "state": first_target.get("sessionState", "unavailable"),  # type: ignore[union-attr]
-    }
+    })
+    if "rendererCDPState" not in initial_session:
+        initial_session["rendererCDPState"] = (
+            "ready"
+            if initial_session.get("rendererCDPEndpoint") is not None
+            else (
+                "restart-required"
+                if initial_session.get("state") == "ready"
+                else first_target.get("rendererCDPState", "unavailable")  # type: ignore[union-attr]
+            )
+        )
     ready_session = {
         "contractVersion": 1,
         "targetID": target_id,
         "state": "ready",
         "endpoint": "ws://127.0.0.1:19444",
+        "rendererCDPState": "restart-required",
+    }
+    ready_renderer_session = {
+        **ready_session,
+        "rendererCDPState": "ready",
+        "rendererCDPEndpoint": "http://127.0.0.1:19222",
     }
     script.write_text(
         "import json, pathlib, sys\n"
         + f"targets={target_payload!r}\n"
         + f"initial={initial_session!r}\n"
         + f"ready={ready_session!r}\n"
+        + f"ready_renderer={ready_renderer_session!r}\n"
         + f"flag=pathlib.Path({str(root / 'ready.flag')!r})\n"
         + f"launch_makes_ready={launch_makes_ready!r}\n"
         + "command=sys.argv[1]\n"
         + "if command == 'targets': print(json.dumps(targets))\n"
-        + "elif command == 'target-session': print(json.dumps(ready if launch_makes_ready and flag.exists() else initial))\n"
+        + "elif command == 'target-session':\n"
+        + "    if launch_makes_ready and flag.exists(): print(json.dumps(ready_renderer if flag.read_text() == 'renderer' else ready))\n"
+        + "    else: print(json.dumps(initial))\n"
         + "elif command == 'launch-target':\n"
         + f"    pathlib.Path({str(root / 'launch-args.json')!r}).write_text(json.dumps(sys.argv[2:]))\n"
-        + "    if launch_makes_ready: flag.write_text('ready')\n"
+        + "    if launch_makes_ready: flag.write_text('renderer' if '--renderer-cdp' in sys.argv else 'ready')\n"
+        + "    print(json.dumps((ready_renderer if '--renderer-cdp' in sys.argv else ready) if launch_makes_ready else initial))\n"
         + "else: raise SystemExit(2)\n",
         encoding="utf-8",
     )
@@ -114,18 +147,17 @@ def write_fake_control(
 
 
 class FakeMultiProfile:
-    def __init__(self, targets: list[Target], states: dict[str, str]) -> None:
+    def __init__(self, targets: list[Target]) -> None:
         self._targets = targets
-        self._states = states
 
     def targets(self, *, refresh: bool = False) -> list[Target]:
         return list(self._targets)
 
     def activation_state(self, target: Target) -> str:
-        return self._states[target.id]
+        return target.session_state
 
     def renderer_state(self, target: Target) -> str:
-        return target.renderer_cdp_state or self._states[target.id]
+        return target.renderer_cdp_state
 
     def session(self, target: Target) -> SharedSession | None:
         return None
@@ -134,7 +166,7 @@ class FakeMultiProfile:
         return None
 
     def activate(self, target: Target, *, request_renderer_cdp: bool = False) -> SharedSession:
-        raise RuntimeError(self._states[target.id])
+        raise RuntimeError(target.session_state)
 
     def prepare_chat(self, target: Target, *, allow_relaunch: bool = False) -> SharedSession:
         raise RuntimeError(self.renderer_state(target))
@@ -218,9 +250,9 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
 
     def test_route_keys_are_target_derived_and_not_profile_slots(self):
         targets = [
-            Target("default", "ChatGPT", "running", True, "restart-required"),
-            Target("local.example.work", "Work", "stopped", True, "available"),
-            Target("local.example.third", "Third", "stopped", True, "available"),
+            Target("default", "ChatGPT", "restart-required", "restart-required", "default"),
+            Target("local.example.work", "Work", "available", "available", "managed"),
+            Target("local.example.third", "Third", "available", "available", "managed"),
         ]
         keys = [target.route_key for target in targets]
         self.assertEqual(len(set(keys)), 3)
@@ -230,7 +262,7 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         self.assertNotIn("profile2", rendered)
 
     def test_running_private_target_requires_restart_and_never_activates_fallback(self):
-        target = Target("default", "ChatGPT", "running", True, "restart-required")
+        target = Target("default", "ChatGPT", "restart-required", "restart-required", "default")
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             cli = write_fake_control(
@@ -259,11 +291,11 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
 
     def test_target_contract_is_dynamic_and_contains_no_private_profile_paths(self):
         targets = [
-            Target("default", "ChatGPT", "running", True, "restart-required", role="default"),
-            Target("team-alpha", "Team Alpha", "stopped", True, "available", role="managed"),
+            Target("default", "ChatGPT", "restart-required", "restart-required", "default"),
+            Target("team-alpha", "Team Alpha", "available", "available", "managed"),
         ]
         bridge = BridgeServer(
-            FakeMultiProfile(targets, {"default": "restart-required", "team-alpha": "available"}),
+            FakeMultiProfile(targets),
             "secret",
             None,
         )
@@ -275,15 +307,117 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             [item["chatMirrorState"] for item in payload["targets"]],
             ["restart-required", "available"],
         )
-        self.assertEqual(
-            [item["rendererCDPState"] for item in payload["targets"]],
-            ["restart-required", "available"],
-        )
+        self.assertTrue(all("rendererCDPState" not in item for item in payload["targets"]))
         rendered = json.dumps(payload)
         self.assertNotIn("CODEX_HOME", rendered)
         self.assertNotIn(".codex", rendered)
         self.assertNotIn("8766", rendered)
         self.assertNotIn("8767", rendered)
+
+    def test_target_contract_requires_renderer_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cli = write_fake_control(
+                root,
+                {
+                    "contractVersion": 1,
+                    "targets": [{
+                        "id": "target",
+                        "displayName": "Target",
+                        "role": "managed",
+                        "ownership": "official-desktop-profile",
+                        "backendPolicy": "single-authoritative-profile-runtime",
+                        "state": "stopped",
+                        "sharedAppServerSupported": True,
+                        "responsesRouteSupported": True,
+                        "rendererCDPSupported": True,
+                        "sessionState": "available",
+                    }],
+                },
+                normalize_contract=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "missing required target fields"):
+                PluraDesktopClient(cli).targets()
+
+    def test_target_contract_rejects_unknown_ownership_policy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cli = write_fake_control(
+                root,
+                {
+                    "contractVersion": 1,
+                    "targets": [{
+                        "id": "target",
+                        "displayName": "Target",
+                        "role": "managed",
+                        "ownership": "legacy-profile-owner",
+                        "backendPolicy": "single-authoritative-profile-runtime",
+                        "state": "stopped",
+                        "sharedAppServerSupported": True,
+                        "responsesRouteSupported": True,
+                        "rendererCDPSupported": True,
+                        "sessionState": "available",
+                        "rendererCDPState": "available",
+                    }],
+                },
+                normalize_contract=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "unsupported ownership policy"):
+                PluraDesktopClient(cli).targets()
+
+    def test_target_contract_rejects_inconsistent_role_and_managed_flag(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cli = write_fake_control(
+                root,
+                {
+                    "contractVersion": 1,
+                    "targets": [{
+                        "id": "target",
+                        "displayName": "Target",
+                        "role": "managed",
+                        "managed": False,
+                        "ownership": "official-desktop-profile",
+                        "backendPolicy": "single-authoritative-profile-runtime",
+                        "state": "stopped",
+                        "sharedAppServerSupported": True,
+                        "responsesRouteSupported": True,
+                        "rendererCDPSupported": True,
+                        "sessionState": "available",
+                        "rendererCDPState": "available",
+                    }],
+                },
+                normalize_contract=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "inconsistent target ownership"):
+                PluraDesktopClient(cli).targets()
+
+    def test_target_contract_rejects_inconsistent_renderer_capability_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cli = write_fake_control(
+                root,
+                {
+                    "contractVersion": 1,
+                    "targets": [{
+                        "id": "target",
+                        "displayName": "Target",
+                        "role": "managed",
+                        "managed": True,
+                        "ownership": "official-desktop-profile",
+                        "backendPolicy": "single-authoritative-profile-runtime",
+                        "state": "stopped",
+                        "sharedAppServerSupported": True,
+                        "responsesRouteSupported": True,
+                        "rendererCDPSupported": False,
+                        "sessionState": "available",
+                        "rendererCDPState": "available",
+                    }],
+                },
+                normalize_contract=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "inconsistent renderer capability state"):
+                PluraDesktopClient(cli).targets()
 
     def test_ready_session_is_read_from_plura_desktop_contract(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -471,130 +605,6 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             with self.assertRaisesRegex(RuntimeError, "desktop process identifier"):
                 client.session(client.targets()[0])
 
-    def test_accessibility_rendering_preserves_message_boundaries_and_status(self):
-        payload = _render_messages(
-            [
-                _Message("user", ["안녕?"]),
-                _Message("assistant", ["현재는 ", "정상"]),
-            ],
-            "streaming",
-            True,
-        )
-        self.assertEqual(payload["messageCount"], 2)
-        self.assertEqual(payload["messages"][0]["text"], "안녕?")
-        self.assertEqual(payload["messages"][1]["text"], "현재는 정상")
-        self.assertEqual(payload["activity"], "streaming")
-        self.assertTrue(payload["isPartial"])
-
-    def test_accessibility_title_matching_handles_desktop_ellipsis(self):
-        self.assertTrue(_title_matches("긴 대화 제목…", "긴 대화 제목 전체"))
-        self.assertTrue(_title_matches("긴 대화 제목 전체", "긴 대화 제목…"))
-        self.assertFalse(_title_matches("다른 제목", "긴 대화 제목 전체"))
-
-    def test_accessibility_navigation_accepts_matching_web_area_title(self):
-        class FakeAccessibility:
-            def __init__(self):
-                self.elements = [
-                    {"AXRole": "AXWebArea", "AXTitle": "프로젝트 구조 분석"},
-                    {"AXRole": "AXButton", "AXTitle": "프로젝트 구조 분석", "AXARIACurrent": ""},
-                ]
-
-            def find(self, roots, predicate):
-                return [element for element in self.elements if predicate(element)]
-
-            def text_attribute(self, element, name):
-                return element.get(name, "")
-
-            def release(self, element):
-                pass
-
-        self.assertTrue(
-            _conversation_is_current(
-                FakeAccessibility(),
-                [object()],
-                "프로젝트 구조 분석",
-            )
-        )
-
-    def test_accessibility_waits_for_desktop_window_after_session_is_ready(self):
-        class FakeAccessibility:
-            def __init__(self):
-                self.calls = 0
-                self.released = []
-
-            def windows(self):
-                self.calls += 1
-                return [] if self.calls < 3 else ["window"]
-
-            def text_attribute(self, element, name):
-                return "AXWindow" if element == "window" and name == "AXRole" else ""
-
-            def retain(self, element):
-                return element
-
-            def release(self, element):
-                self.released.append(element)
-
-        accessibility = FakeAccessibility()
-        with patch("chatgpt_plura_host.accessibility.time.sleep"):
-            _wait_for_desktop_window(accessibility)
-        self.assertEqual(accessibility.calls, 3)
-        self.assertEqual(accessibility.released, ["window", "window"])
-
-    def test_accessibility_rejects_windowless_application_shell(self):
-        class FakeAccessibility:
-            def __init__(self):
-                self.released = []
-
-            def windows(self):
-                return ["app-shell", "window"]
-
-            def text_attribute(self, element, name):
-                if name != "AXRole":
-                    return ""
-                return "AXApplication" if element == "app-shell" else "AXWindow"
-
-            def retain(self, element):
-                return element
-
-            def release(self, element):
-                self.released.append(element)
-
-        accessibility = FakeAccessibility()
-        windows = _desktop_windows(accessibility)
-        self.assertEqual(windows, ["window"])
-        self.assertEqual(accessibility.released, ["app-shell", "window"])
-        for window in windows:
-            accessibility.release(window)
-        self.assertEqual(accessibility.released, ["app-shell", "window", "window"])
-
-    def test_accessibility_requests_application_role_before_enhanced_ui(self):
-        class FakeAccessibility:
-            app = "app"
-
-            def __init__(self):
-                self.attributes = []
-
-            def text_attribute(self, element, name):
-                self.attributes.append((element, name))
-                return "AXApplication"
-
-        accessibility = FakeAccessibility()
-        with (
-            patch(
-                "chatgpt_plura_host.accessibility._web_content_is_exposed",
-                side_effect=[False, False, True],
-            ),
-            patch(
-                "chatgpt_plura_host.accessibility._request_web_accessibility",
-                return_value="ok",
-            ) as request,
-            patch("chatgpt_plura_host.accessibility.time.sleep"),
-        ):
-            _ensure_web_accessibility(accessibility, 4321)
-        self.assertEqual(accessibility.attributes, [("app", "AXRole")])
-        request.assert_called_once_with(4321)
-
     def test_host_instances_reattach_through_same_plura_desktop_contract(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -646,15 +656,23 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             client = PluraDesktopClient(cli)
             target = client.targets()[0]
             session = client.activate(target, request_renderer_cdp=True)
-            self.assertEqual(session, SharedSession("target", "ws://127.0.0.1:19444"))
+            self.assertEqual(
+                session,
+                SharedSession(
+                    "target",
+                    "ws://127.0.0.1:19444",
+                    None,
+                    "http://127.0.0.1:19222",
+                ),
+            )
             self.assertTrue((root / "ready.flag").is_file())
             self.assertEqual(
                 json.loads((root / "launch-args.json").read_text(encoding="utf-8")),
-                ["--target", "target", "--renderer-cdp"],
+                ["--target", "target", "--renderer-cdp", "--json"],
             )
 
     def test_renderer_transcript_provider_prefers_canonical_cdp_session(self):
-        target = Target("target", "Target", "running", True, "ready")
+        target = Target("target", "Target", "ready", "ready", "managed")
 
         class FakeReadyMultiProfile:
             def session(self, candidate):
@@ -677,9 +695,6 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
                 "messageCount": 1,
             }
 
-        def fail_accessibility(*args):
-            raise AssertionError("renderer sessions must not wait on Accessibility")
-
         provider = TargetChatTranscriptProvider(
             FakeReadyMultiProfile(),
             lambda candidate: {
@@ -692,7 +707,6 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
                 }]
             },
             renderer_extractor=extractor,
-            accessibility_provider=fail_accessibility,
         )
         payload = provider(target, "conversation")
         self.assertEqual(payload["source"], "desktop-renderer")
@@ -707,37 +721,20 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             [("http://127.0.0.1:19222", "conversation", "Project chat", "Project")],
         )
 
-    def test_renderer_transcript_provider_uses_accessibility_for_legacy_session(self):
-        target = Target("target", "Target", "running", True, "ready")
+    def test_renderer_transcript_provider_requires_canonical_renderer_session(self):
+        target = Target("target", "Target", "ready", "restart-required", "managed")
 
         class FakeReadyMultiProfile:
             def session(self, candidate):
                 return SharedSession("target", "ws://127.0.0.1:19444", 4321)
 
-        expected = {
-            "source": "desktop-accessibility",
-            "messageCount": 2,
-            "messages": [
-                {"role": "user", "text": "hello", "segments": ["hello"]},
-                {"role": "assistant", "text": "world", "segments": ["world"]},
-            ],
-        }
         provider = TargetChatTranscriptProvider(
             FakeReadyMultiProfile(),
             lambda candidate: {"entries": []},
             renderer_extractor=lambda *args: (_ for _ in ()).throw(AssertionError("unexpected renderer call")),
-            accessibility_provider=lambda candidate, conversation_id: expected,
         )
-        payload = provider(target, "conversation")
-        self.assertEqual(payload["source"], "desktop-accessibility")
-        self.assertEqual(
-            payload["items"],
-            [
-                {"kind": "message", "role": "user", "text": "hello", "segments": ["hello"]},
-                {"kind": "message", "role": "assistant", "text": "world", "segments": ["world"]},
-            ],
-        )
-        self.assertEqual(payload["capabilities"], {"sendText": False, "attachments": False})
+        with self.assertRaisesRegex(ChatTranscriptUnavailable, "desktop-renderer-unavailable"):
+            provider(target, "conversation")
 
     def test_renderer_expression_embeds_values_as_json_not_javascript_source(self):
         expression = _transcript_expression(
@@ -756,6 +753,11 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         self.assertIn("semantic-turn-markdown-v2", expression)
         self.assertIn("marker-range-v2", expression)
         self.assertIn("semanticMarkdown", expression)
+        self.assertIn("semanticCurrentConversation", expression)
+        self.assertIn("location.href.includes(conversationId)", expression)
+        self.assertIn("if (!row && !currentByPage) return {status: 'conversation-row-unavailable'};", expression)
+        self.assertIn("if (!row) return {status: 'conversation-row-unavailable'};", expression)
+        self.assertNotIn("matchesTitle(document.title)", expression)
         self.assertIn("tag === 'pre'", expression)
         self.assertIn("tag === 'table'", expression)
         self.assertIn("You said:", expression)
@@ -779,11 +781,9 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         target = Target(
             "default",
             "ChatGPT",
-            "running",
-            True,
             "ready",
-            renderer_cdp_supported=True,
-            renderer_cdp_state="restart-required",
+            "restart-required",
+            "default",
         )
 
         class FakeClient(PluraDesktopClient):
@@ -800,22 +800,16 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         target = Target(
             "default",
             "ChatGPT",
-            "running",
-            True,
             "ready",
-            role="default",
-            renderer_cdp_supported=True,
-            renderer_cdp_state="restart-required",
+            "restart-required",
+            "default",
         )
         refreshed = Target(
             "default",
             "ChatGPT",
-            "stopped",
-            True,
             "available",
-            role="default",
-            renderer_cdp_supported=True,
-            renderer_cdp_state="available",
+            "available",
+            "default",
         )
 
         class FakeClient(PluraDesktopClient):
@@ -823,7 +817,7 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
                 self.events = []
 
             def renderer_state(self, candidate):
-                return candidate.renderer_cdp_state or candidate.session_state
+                return candidate.renderer_cdp_state
 
             def _run_json(self, *arguments):
                 self.events.append(("command", arguments))
@@ -932,7 +926,7 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             ])
 
     def test_renderer_composer_provider_requires_canonical_cdp_and_returns_request_identity(self):
-        target = Target("target", "Target", "running", True, "ready")
+        target = Target("target", "Target", "ready", "ready", "managed")
 
         class FakeReadyMultiProfile:
             def session(self, candidate, *, refresh=False):
@@ -972,8 +966,8 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
             [("http://127.0.0.1:19222", "conversation", "Project chat", "Project", "hello", [])],
         )
 
-    def test_renderer_composer_provider_never_falls_back_to_accessibility_for_write(self):
-        target = Target("target", "Target", "running", True, "ready")
+    def test_renderer_composer_provider_requires_canonical_renderer_for_write(self):
+        target = Target("target", "Target", "ready", "restart-required", "managed")
 
         class FakeLegacyMultiProfile:
             def session(self, candidate, *, refresh=False):
@@ -1013,8 +1007,15 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         self.assertIn("desktop-composer-draft-present", focus)
         self.assertIn("desktop-attachment-input-unavailable", focus)
         self.assertIn("#prompt-textarea", focus)
+        self.assertIn("data-sidebar-chatgpt-conversation-key", focus)
+        self.assertIn("data-chatgpt-selection-conversation-id", focus)
+        self.assertIn("semanticCurrentConversation()", focus)
+        self.assertIn("if (!row && !currentByPage) return {status: 'conversation-row-unavailable'};", focus)
+        self.assertNotIn("matchesTitle(document.title)", focus)
         self.assertIn('const expectedText = "hello\\\";document.body.remove();//";', submit)
         self.assertIn('photo\\\";alert(2);//.png', attachment_input)
+        self.assertIn("data-map-composer-conversation", submit)
+        self.assertIn("const isExpectedConversation = () =>", submit)
         self.assertIn("desktop-attachment-changed", attachment_ready)
         self.assertIn("conversation-changed-before-submit", submit)
         self.assertIn("desktop-composer-send-unavailable", submit)
@@ -1038,8 +1039,8 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
 
 class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        target = Target("default", "ChatGPT", "running", True, "restart-required")
-        self.multi = FakeMultiProfile([target], {"default": "restart-required"})
+        target = Target("default", "ChatGPT", "restart-required", "restart-required", "default")
+        self.multi = FakeMultiProfile([target])
         self.bridge = BridgeServer(self.multi, "capability", None)
         self.server = await asyncio.start_server(self.bridge.handle, "127.0.0.1", 0)
         socket_info = self.server.sockets[0].getsockname()
@@ -1201,7 +1202,7 @@ class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
             "title": "Project chat",
             "projectId": "project",
             "projectName": "Project",
-            "source": "desktop-accessibility",
+            "source": "desktop-renderer",
             "messages": [{"role": "user", "text": "hello", "segments": ["hello"]}],
             "activity": "idle",
             "isPartial": False,
@@ -1216,9 +1217,9 @@ class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), payload)
 
-    async def test_chat_transcript_reports_accessibility_reason_without_leaking_details(self):
+    async def test_chat_transcript_reports_renderer_reason_without_leaking_details(self):
         def provider(target, conversation_id):
-            raise ChatTranscriptUnavailable("desktop-window-unavailable")
+            raise ChatTranscriptUnavailable("desktop-renderer-unavailable")
 
         self.bridge.chat_transcript_provider = provider
         route = self.multi.targets()[0].route_key
@@ -1227,7 +1228,7 @@ class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
             "Bearer capability",
         )
         self.assertEqual(status, 409)
-        self.assertEqual(json.loads(body), {"error": "desktop-window-unavailable"})
+        self.assertEqual(json.loads(body), {"error": "desktop-renderer-unavailable"})
 
     async def test_chat_transcript_sanitizes_unstructured_provider_error(self):
         def provider(target, conversation_id):

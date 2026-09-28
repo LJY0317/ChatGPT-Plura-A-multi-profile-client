@@ -233,9 +233,6 @@ class BridgeServer:
                     "route": f"/targets/{target.route_key}/ws",
                     "activationState": self.runtime.activation_state(target),
                     "chatMirrorState": self.runtime.renderer_state(target),
-                    # Backward-compatible implementation detail for older
-                    # Plura Mobile builds. New clients consume chatMirrorState.
-                    "rendererCDPState": self.runtime.renderer_state(target),
                 }
             )
         return json.dumps({"contractVersion": 1, "targets": data}, sort_keys=True).encode("utf-8")
@@ -470,11 +467,8 @@ class BridgeServer:
                         reason = "chat-transcript-unavailable"
                     status = "409 Conflict" if reason in {
                         "target-not-ready",
-                        "desktop-process-unavailable",
-                        "desktop-window-unavailable",
-                        "desktop-accessibility-permission-required",
+                        "desktop-renderer-unavailable",
                         "conversation-row-unavailable",
-                        "conversation-row-ambiguous",
                         "conversation-row-not-actionable",
                     } else "503 Service Unavailable"
                     await send_response(

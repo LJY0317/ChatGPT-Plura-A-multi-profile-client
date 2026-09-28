@@ -49,7 +49,7 @@ The runtime/host/mobile layers always use the same generic target collection and
 
 The host depends on a narrow `TargetRuntime` lifecycle interface rather than on Plura Desktop implementation details. `PluraDesktopClient` is the current adapter. Plura Desktop remains an independent upstream product/repository and the canonical multi-profile runtime; Plura Mobile must not duplicate its lifecycle implementation. Users who need additional Desktop accounts install/setup Plura Desktop, potentially through a guided Plura Mobile onboarding flow.
 
-The semantic `role` reported by the runtime (for example `default`) is preferred over guessing product meaning from an opaque target ID. Compatibility fallbacks may recognize historical IDs only inside the adapter/model boundary.
+The semantic `role` reported by the versioned runtime contract (for example `default`) is authoritative. Plura Mobile does not infer product meaning from opaque target IDs.
 
 ## Chat vs Work
 
@@ -59,10 +59,10 @@ Cloud Chat conversations currently use the official Desktop as the source of tru
 
 1. Prefer the loopback renderer-CDP endpoint created at canonical Desktop launch.
 2. Extract semantic conversation structure from the already-authenticated official renderer.
-3. Retain macOS Accessibility only as a legacy read-only fallback for rendererless sessions.
+3. If the canonical renderer capability is not ready, fail closed and surface the target's renderer state rather than guessing through OS UI automation.
 4. Never add a second WebView/browser profile merely to mirror Chat.
 
-Chat-mirror capability is launch-time state and is separate from app-server readiness. The Plura Host contract exposes the generic `chatMirrorState`; the current Plura Desktop adapter derives it from renderer-CDP state and retains `rendererCDPState` only as a compatibility field for older Plura Mobile builds. A target can therefore be usable for Work while `chatMirrorState=restart-required`. Plura Mobile never quits such a Desktop silently: it may offer an explicit, confirmed **Relaunch for Fast Chat** action, after which Plura Desktop performs one normal target quit and relaunches the same target with its best available Chat follower capability.
+Chat-mirror capability is launch-time state and is separate from app-server readiness. The Plura Host contract exposes the generic `chatMirrorState`, derived directly from Plura Desktop's versioned renderer state. A target can therefore be usable for Work while `chatMirrorState=restart-required`. Plura Mobile never quits such a Desktop silently: it may offer an explicit, confirmed **Relaunch for Fast Chat** action, after which Plura Desktop performs one normal target quit and relaunches the same target with its best available Chat follower capability.
 
 ## OpenAI-change resilience
 
@@ -135,9 +135,9 @@ This allows each platform to provide native typography, code cards, attachment p
 
 ## Desktop host/platform boundary
 
-Plura Host is a cross-platform companion component even though macOS is the only real official-Desktop environment fully exercised today. Common code owns authenticated transport, target routing, semantic contracts, attachment staging, private-network discovery, and bounded diagnostics. Platform adapters own credential storage, executable/process integration, filesystem conventions, and any OS-native fallback.
+Plura Host is a cross-platform companion component even though macOS is the only real official-Desktop environment fully exercised today. Common code owns authenticated transport, target routing, semantic contracts, attachment staging, private-network discovery, and bounded diagnostics. Platform adapters own credential storage, executable/process integration, and filesystem conventions.
 
-Renderer-CDP is preferred when the target provider can expose it because the protocol boundary is substantially more portable than OS accessibility automation. macOS `AXUIElement` support is a legacy read-only fallback and must remain isolated. Windows/Linux fallbacks should be added only from observed real-app evidence; the common core must never accumulate guessed macOS-shaped branches for unverified platforms.
+Plura Desktop's versioned target/session contract is the only Desktop Chat follower boundary consumed by Plura Host. Its current implementation publishes a canonical loopback renderer-CDP endpoint on renderer-capable sessions across the Desktop platform adapters. Plura Host never substitutes OS Accessibility/UI automation when that capability is unavailable; it fails closed and surfaces the contract state instead. Windows/Linux real-app behavior must still be verified from observed official-Desktop evidence before those platforms are claimed as equivalent.
 
 ## Branding
 

@@ -10,7 +10,6 @@ import time
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
-from .accessibility import ChatTranscriptUnavailable, TargetChatAccessibilityProvider
 from .attachments import MAX_CHAT_ATTACHMENTS_PER_MESSAGE, StagedChatAttachment
 from .catalog import (
     ChatCatalogUnavailable,
@@ -36,15 +35,18 @@ class ChatRendererUnavailable(RuntimeError):
     pass
 
 
+class ChatTranscriptUnavailable(RuntimeError):
+    pass
+
+
 class TargetChatTranscriptProvider:
-    """Prefer the canonical renderer contract and retain AX as a legacy fallback.
+    """Read cloud Chat through Plura Desktop's canonical renderer contract.
 
     Plura Desktop owns whether a target was launched with its loopback-only CDP
     endpoint. When that endpoint exists, Plura reads the same semantic
-    DOM that the official Desktop renders instead of depending on a visible
-    macOS window. Existing canonical sessions that predate renderer CDP continue
-    to use the read-only Accessibility projection until their next normal quit
-    and relaunch.
+    DOM that the official Desktop renders. Renderer availability is part of the
+    versioned target/session contract; Plura does not infer or replace it with
+    OS accessibility automation.
     """
 
     def __init__(
@@ -53,15 +55,10 @@ class TargetChatTranscriptProvider:
         catalog_provider: Callable[[Target], dict[str, Any]],
         *,
         renderer_extractor: Callable[[str, str, str, str], dict[str, Any]] | None = None,
-        accessibility_provider: Callable[[Target, str], dict[str, Any]] | None = None,
     ) -> None:
         self.runtime = runtime
         self.catalog_provider = catalog_provider
         self.renderer_extractor = renderer_extractor or _extract_renderer_transcript
-        self.accessibility_provider = accessibility_provider or TargetChatAccessibilityProvider(
-            runtime,
-            catalog_provider,
-        )
 
     def __call__(self, target: Target, conversation_id: str) -> dict[str, Any]:
         snapshot = (
@@ -77,7 +74,7 @@ class TargetChatTranscriptProvider:
                 raise ChatTranscriptUnavailable("target-not-ready")
             catalog = self.catalog_provider(target)
         if session.renderer_cdp_endpoint is None:
-            return _with_semantic_items(self.accessibility_provider(target, conversation_id))
+            raise ChatTranscriptUnavailable("desktop-renderer-unavailable")
         entry, title, project_name = _cloud_chat_entry(catalog, conversation_id)
 
         try:
@@ -103,7 +100,7 @@ class TargetChatTranscriptProvider:
 class TargetChatComposerProvider:
     """Guarded write adapter for the already-authenticated official renderer.
 
-    Writes deliberately have no Accessibility fallback. A target must expose
+    Writes deliberately have no OS UI-automation fallback. A target must expose
     its canonical loopback renderer CDP endpoint, the requested cloud
     conversation must still exist in the Desktop catalog, and the renderer
     transaction re-verifies the active conversation and empty composer before
@@ -251,7 +248,7 @@ def _with_semantic_items(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_semantic_items(raw_items: list[Any]) -> list[dict[str, Any]]:
     if len(raw_items) > MAX_RENDERER_ITEMS:
-        raise ChatRendererUnavailable("desktop-accessibility-output-too-large")
+        raise ChatRendererUnavailable("desktop-renderer-output-too-large")
 
     normalized: list[dict[str, Any]] = []
     character_count = 0
@@ -267,7 +264,7 @@ def _normalize_semantic_items(raw_items: list[Any]) -> list[dict[str, Any]]:
             text = ""
         character_count += len(text)
         if character_count > MAX_RENDERER_CHARACTERS:
-            raise ChatRendererUnavailable("desktop-accessibility-output-too-large")
+            raise ChatRendererUnavailable("desktop-renderer-output-too-large")
 
         item: dict[str, Any] = {"kind": kind, "text": text}
         role = raw.get("role")
@@ -633,10 +630,31 @@ def _composer_focus_expression(
     element?.innerText ||
     element?.textContent || ''
   );
+  const conversationValueMatches = value => {{
+    const raw = (value || '').trim();
+    return raw === conversationId ||
+      raw === `chatgpt:${{conversationId}}` ||
+      raw === `chatgpt:conversation:${{conversationId}}`;
+  }};
+  const semanticCurrentConversation = () => [
+    'data-chatgpt-selection-conversation-id',
+    'data-map-composer-conversation',
+    'data-above-composer-conversation-id'
+  ].some(name => Array.from(document.querySelectorAll(`[${{name}}]`))
+    .some(element => conversationValueMatches(element.getAttribute(name))));
   const candidates = root => Array.from(
     (root || document).querySelectorAll('a[href], button, [role="button"]')
   );
   const rowFor = root => {{
+    const semanticRows = Array.from(
+      (root || document).querySelectorAll('[data-sidebar-chatgpt-conversation-key]')
+    ).filter(element => conversationValueMatches(
+      element.getAttribute('data-sidebar-chatgpt-conversation-key')
+    ));
+    if (semanticRows.length === 1) {{
+      const primary = candidates(semanticRows[0]).filter(element => matchesTitle(label(element)));
+      if (primary.length === 1) return primary[0];
+    }}
     const items = candidates(root);
     const byId = items.filter(element => (element.getAttribute('href') || '').includes(conversationId));
     if (byId.length === 1) return byId[0];
@@ -662,14 +680,22 @@ def _composer_focus_expression(
     }}
     if (!scope) return {{status: 'conversation-row-unavailable'}};
   }}
+  const currentByPage = semanticCurrentConversation() ||
+    location.href.includes(conversationId);
   const row = rowFor(scope);
-  if (!row) return {{status: 'conversation-row-unavailable'}};
+  // The sidebar is virtualized and can omit the row for the conversation
+  // that is already open. In that case an exact conversation-ID signal from
+  // the page/URL is sufficient and no navigation is needed. Title-only
+  // matching is deliberately not accepted for writes because duplicate chat
+  // titles are common. A row remains mandatory when switching conversations.
+  if (!row && !currentByPage) return {{status: 'conversation-row-unavailable'}};
   const isCurrent = () => {{
+    if (semanticCurrentConversation()) return true;
     if (location.href.includes(conversationId)) return true;
-    if (matchesTitle(document.title)) return true;
     return rowFor(document)?.getAttribute('aria-current') === 'page';
   }};
   if (!isCurrent()) {{
+    if (!row) return {{status: 'conversation-row-unavailable'}};
     row.scrollIntoView({{block: 'nearest'}});
     row.click();
     let selected = false;
@@ -779,6 +805,19 @@ def _composer_submit_expression(
   const attachmentNames = {attachment_names_json};
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const normalize = value => (value || '').replace(/\\r\\n/g, '\\n').trim();
+  const conversationValueMatches = value => {{
+    const raw = (value || '').trim();
+    return raw === conversationId ||
+      raw === `chatgpt:${{conversationId}}` ||
+      raw === `chatgpt:conversation:${{conversationId}}`;
+  }};
+  const semanticCurrentConversation = () => [
+    'data-chatgpt-selection-conversation-id',
+    'data-map-composer-conversation',
+    'data-above-composer-conversation-id'
+  ].some(name => Array.from(document.querySelectorAll(`[${{name}}]`))
+    .some(element => conversationValueMatches(element.getAttribute(name))));
+  const isExpectedConversation = () => semanticCurrentConversation() || location.href.includes(conversationId);
   const visible = element => !!element && element.getClientRects().length > 0;
   const composer = () => {{
     const selectors = [
@@ -794,7 +833,7 @@ def _composer_submit_expression(
     }}
     return null;
   }};
-  if (!location.href.includes(conversationId)) return {{status: 'conversation-changed-before-submit'}};
+  if (!isExpectedConversation()) return {{status: 'conversation-changed-before-submit'}};
   const input = composer();
   if (!input) return {{status: 'desktop-composer-unavailable'}};
   const value = 'value' in input ? input.value : (input.innerText || input.textContent || '');
@@ -832,7 +871,7 @@ def _composer_submit_expression(
   const waitIterations = attachmentNames.length ? 300 : 1;
   for (let i = 0; i < waitIterations && (!send || send.disabled); i += 1) {{
     await sleep(100);
-    if (!location.href.includes(conversationId)) return {{status: 'conversation-changed-before-submit'}};
+    if (!isExpectedConversation()) return {{status: 'conversation-changed-before-submit'}};
     send = findSend();
   }}
   if (!send || send.disabled) {{
@@ -844,7 +883,7 @@ def _composer_submit_expression(
   const expectedDisplay = clean(expectedText);
   for (let i = 0; i < 60; i += 1) {{
     await sleep(50);
-    if (!location.href.includes(conversationId)) return {{status: 'chat-send-uncertain'}};
+    if (!isExpectedConversation()) return {{status: 'chat-send-uncertain'}};
     const bubbles = Array.from(document.querySelectorAll('[data-turn-key] [data-user-message-bubble]'));
     if (bubbles.length > previousUserMessageCount) {{
       const latest = bubbles[bubbles.length - 1];
@@ -872,7 +911,7 @@ def _normalize_renderer_transcript_result(value: dict[str, Any]) -> dict[str, An
     if not isinstance(messages, list) or not messages:
         raise ChatRendererUnavailable("desktop-transcript-unavailable")
     if len(messages) > MAX_RENDERER_MESSAGES:
-        raise ChatRendererUnavailable("desktop-accessibility-output-too-large")
+        raise ChatRendererUnavailable("desktop-renderer-output-too-large")
 
     normalized: list[dict[str, Any]] = []
     character_count = 0
@@ -885,7 +924,7 @@ def _normalize_renderer_transcript_result(value: dict[str, Any]) -> dict[str, An
         text = text.strip()
         character_count += len(text)
         if character_count > MAX_RENDERER_CHARACTERS:
-            raise ChatRendererUnavailable("desktop-accessibility-output-too-large")
+            raise ChatRendererUnavailable("desktop-renderer-output-too-large")
         normalized.append({"role": item["role"], "text": text, "segments": [text]})
     if not normalized:
         raise ChatRendererUnavailable("desktop-transcript-unavailable")
@@ -956,7 +995,7 @@ def _extract_renderer_transcript(
                     "conversation-row-unavailable",
                     "conversation-row-not-actionable",
                     "desktop-transcript-unavailable",
-                    "desktop-accessibility-output-too-large",
+                    "desktop-renderer-output-too-large",
                 }:
                     last_reason = status
                 continue
@@ -1144,6 +1183,18 @@ def _transcript_expression(conversation_id: str, title: str, project_name: str) 
     element?.innerText ||
     element?.textContent || ''
   );
+  const conversationValueMatches = value => {{
+    const raw = (value || '').trim();
+    return raw === conversationId ||
+      raw === `chatgpt:${{conversationId}}` ||
+      raw === `chatgpt:conversation:${{conversationId}}`;
+  }};
+  const semanticCurrentConversation = () => [
+    'data-chatgpt-selection-conversation-id',
+    'data-map-composer-conversation',
+    'data-above-composer-conversation-id'
+  ].some(name => Array.from(document.querySelectorAll(`[${{name}}]`))
+    .some(element => conversationValueMatches(element.getAttribute(name))));
   const candidates = root => Array.from(
     (root || document).querySelectorAll('a[href], button, [role="button"]')
   );
@@ -1175,14 +1226,18 @@ def _transcript_expression(conversation_id: str, title: str, project_name: str) 
     if (!scope) return {{status: 'conversation-row-unavailable'}};
   }}
   let row = rowFor(scope);
-  if (!row) return {{status: 'conversation-row-unavailable'}};
+  const currentByPage = semanticCurrentConversation() ||
+    location.href.includes(conversationId);
+  if (!row && !currentByPage) return {{status: 'conversation-row-unavailable'}};
   const isCurrent = () => {{
-    if (matchesTitle(document.title)) return true;
+    if (semanticCurrentConversation()) return true;
+    if (location.href.includes(conversationId)) return true;
     const current = rowFor(document);
     if (current?.getAttribute('aria-current') === 'page') return true;
-    return location.href.includes(conversationId);
+    return false;
   }};
   if (!isCurrent()) {{
+    if (!row) return {{status: 'conversation-row-unavailable'}};
     row.scrollIntoView({{block: 'nearest'}});
     row.click();
     let selected = false;

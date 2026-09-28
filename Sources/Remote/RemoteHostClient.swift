@@ -118,19 +118,13 @@ struct RemoteTarget: Identifiable, Equatable, Codable, Sendable {
 
     let id: String
     let displayName: String
-    let role: String?
+    let role: String
     let route: String
     let activationState: ActivationState
-    let chatMirrorState: ActivationState?
-    let rendererCDPState: ActivationState?
-
-    private var effectiveChatMirrorState: ActivationState? {
-        chatMirrorState ?? rendererCDPState
-    }
+    let chatMirrorState: ActivationState
 
     var isPrimaryTarget: Bool {
-        if let role { return role == "default" }
-        return id == "default"
+        role == "default"
     }
 
     var presentationName: String {
@@ -145,14 +139,14 @@ struct RemoteTarget: Identifiable, Equatable, Codable, Sendable {
         if activationState != .ready {
             return "\(presentationName) · \(activationShortLabel)"
         }
-        if effectiveChatMirrorState == .restartRequired {
+        if chatMirrorState == .restartRequired {
             return "\(presentationName) · Chat relaunch recommended"
         }
         return presentationName
     }
 
-    var chatMirrorNeedsRelaunch: Bool { effectiveChatMirrorState == .restartRequired }
-    var chatMirrorIsReady: Bool { effectiveChatMirrorState == .ready }
+    var chatMirrorNeedsRelaunch: Bool { chatMirrorState == .restartRequired }
+    var chatMirrorIsReady: Bool { chatMirrorState == .ready }
 
     var activationDescription: String {
         switch activationState {
@@ -228,11 +222,7 @@ enum RemoteHostError: LocalizedError, Sendable {
             case "unsupported": "This target does not support the canonical Plura Desktop runtime on this Mac."
             case "unavailable": "This target is currently unavailable."
             case "target-not-ready": "This ChatGPT Desktop profile is not ready on your Mac."
-            case "desktop-process-unavailable": "The matching ChatGPT Desktop profile is not running on your Mac."
-            case "desktop-window-unavailable": "Open a ChatGPT window for this profile on your Mac, then try again."
-            case "desktop-accessibility-permission-required": "Allow Plura Host to control your Mac in Privacy & Security > Accessibility, then try again."
             case "conversation-row-unavailable": "Open this Project in ChatGPT on your Mac so the conversation appears in its sidebar, then try again."
-            case "conversation-row-ambiguous": "ChatGPT Desktop currently shows more than one matching conversation row. Open the intended chat on your Mac, then try again."
             case "conversation-row-not-actionable": "ChatGPT Desktop exposed this conversation but did not allow it to be selected."
             case "desktop-renderer-unavailable": "This ChatGPT Desktop session was not launched with the renderer connection required to send Chat messages. Quit this profile normally once, then relaunch it through Plura Desktop."
             case "desktop-renderer-ambiguous": "ChatGPT Desktop exposed more than one writable renderer. Close duplicate ChatGPT windows and try again."
@@ -255,11 +245,8 @@ enum RemoteHostError: LocalizedError, Sendable {
             case "desktop-renderer-unavailable": "ChatGPT Desktop's renderer connection is not available right now."
             case "desktop-renderer-timeout": "ChatGPT Desktop's renderer took too long to respond."
             case "desktop-renderer-failed": "ChatGPT Desktop's renderer could not expose this conversation right now."
-            case "desktop-accessibility-unsupported": "Desktop Chat mirroring is currently available from a Mac host only."
-            case "desktop-accessibility-timeout": "ChatGPT Desktop took too long to expose this conversation. Try again after it finishes loading."
-            case "desktop-accessibility-failed": "The Mac could not access ChatGPT Desktop's rendered conversation right now."
             case "desktop-transcript-unavailable": "ChatGPT Desktop did not expose any rendered messages for this conversation."
-            case "desktop-accessibility-output-too-large": "This Desktop conversation is too large to mirror safely in one request."
+            case "desktop-renderer-output-too-large": "This Desktop conversation is too large to mirror safely in one request."
             case "chat-send-uncertain": "The Mac could not confirm whether ChatGPT accepted the message. Refresh this conversation before trying again."
             case "chat-write-unavailable": "This Mac host does not currently support sending Desktop Chat messages."
             case "desktop-attachment-upload-timeout": "ChatGPT Desktop did not finish preparing the attachment in time. Refresh the conversation before retrying."
@@ -391,7 +378,7 @@ struct RemoteHostClient: Sendable {
         let decoded = try JSONDecoder().decode(RemoteChatTranscript.self, from: data)
         guard decoded.contractVersion == 1,
               decoded.conversationId == conversationID,
-              ["desktop-accessibility", "desktop-renderer"].contains(decoded.source),
+              decoded.source == "desktop-renderer",
               decoded.messageCount == decoded.messages.count,
               ["idle", "streaming"].contains(decoded.activity),
               decoded.messages.allSatisfy({ ["user", "assistant"].contains($0.role) }),

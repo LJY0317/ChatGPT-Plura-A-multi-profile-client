@@ -10,18 +10,17 @@ from urllib.parse import urlsplit
 
 
 SESSION_STATES = {"ready", "available", "restart-required", "unsupported", "unavailable"}
+TARGET_OWNERSHIP = "official-desktop-profile"
+TARGET_BACKEND_POLICY = "single-authoritative-profile-runtime"
 
 
 @dataclass(frozen=True)
 class Target:
     id: str
     display_name: str
-    state: str
-    shared_app_server_supported: bool
     session_state: str
-    role: str | None = None
-    renderer_cdp_supported: bool = False
-    renderer_cdp_state: str | None = None
+    renderer_cdp_state: str
+    role: str
 
     @property
     def route_key(self) -> str:
@@ -96,15 +95,42 @@ class PluraDesktopClient:
         seen: set[str] = set()
         for raw in payload["targets"]:
             if not isinstance(raw, dict):
-                continue
+                raise RuntimeError("Plura Desktop target contract contains a non-object target")
             target_id = raw.get("id")
             display = raw.get("displayName")
             state = raw.get("state")
             session_state = raw.get("sessionState")
-            if not all(isinstance(value, str) and value for value in (target_id, display, state, session_state)):
-                continue
-            if session_state not in SESSION_STATES:
+            renderer_state = raw.get("rendererCDPState")
+            role = raw.get("role")
+            managed = raw.get("managed")
+            ownership = raw.get("ownership")
+            backend_policy = raw.get("backendPolicy")
+            shared_supported = raw.get("sharedAppServerSupported")
+            renderer_supported = raw.get("rendererCDPSupported")
+            responses_supported = raw.get("responsesRouteSupported")
+            if not all(
+                isinstance(value, str) and value
+                for value in (target_id, display, state, session_state, renderer_state, role)
+            ):
+                raise RuntimeError("Plura Desktop target contract is missing required target fields")
+            if ownership != TARGET_OWNERSHIP or backend_policy != TARGET_BACKEND_POLICY:
+                raise RuntimeError("Plura Desktop target contract contains unsupported ownership policy")
+            if role not in {"default", "managed"} or not isinstance(managed, bool):
+                raise RuntimeError("Plura Desktop target contract contains invalid target role")
+            if (role == "default") == managed:
+                raise RuntimeError("Plura Desktop target contract contains inconsistent target ownership")
+            if not all(isinstance(value, bool) for value in (
+                shared_supported,
+                renderer_supported,
+                responses_supported,
+            )):
+                raise RuntimeError("Plura Desktop target contract contains invalid capability flags")
+            if session_state not in SESSION_STATES or renderer_state not in SESSION_STATES:
                 raise RuntimeError("Plura Desktop target contract contains an unknown session state")
+            if (session_state == "unsupported") == shared_supported:
+                raise RuntimeError("Plura Desktop target contract contains inconsistent app-server capability state")
+            if (renderer_state == "unsupported") == renderer_supported:
+                raise RuntimeError("Plura Desktop target contract contains inconsistent renderer capability state")
             if target_id in seen:
                 raise RuntimeError("Plura Desktop target contract contains duplicate IDs")
             seen.add(target_id)
@@ -112,17 +138,9 @@ class PluraDesktopClient:
                 Target(
                     id=target_id,
                     display_name=display,
-                    state=state,
-                    shared_app_server_supported=raw.get("sharedAppServerSupported") is True,
                     session_state=session_state,
-                    role=(raw.get("role") if isinstance(raw.get("role"), str) and raw.get("role") else None),
-                    renderer_cdp_supported=raw.get("rendererCDPSupported") is True,
-                    renderer_cdp_state=(
-                        raw.get("rendererCDPState")
-                        if isinstance(raw.get("rendererCDPState"), str)
-                        and raw.get("rendererCDPState") in SESSION_STATES
-                        else None
-                    ),
+                    renderer_cdp_state=renderer_state,
+                    role=role,
                 )
             )
         self._targets_cache = list(targets)
@@ -142,10 +160,27 @@ class PluraDesktopClient:
             if cached is not None:
                 return cached
         payload = self._run_json("target-session", "--target", target.id, "--json")
+        session = self._session_from_payload(target, payload)
+        if session is None:
+            self._session_cache.pop(target.id, None)
+            return None
+        self._session_cache[target.id] = session
+        return session
+
+    def _session_from_payload(
+        self,
+        target: Target,
+        payload: dict[str, object],
+    ) -> SharedSession | None:
         if payload.get("contractVersion") != 1 or payload.get("targetID") != target.id:
             raise RuntimeError("Unsupported Plura Desktop session contract")
-        if payload.get("state") != "ready":
-            self._session_cache.pop(target.id, None)
+        state = payload.get("state")
+        renderer_state = payload.get("rendererCDPState")
+        if not isinstance(state, str) or state not in SESSION_STATES:
+            raise RuntimeError("Plura Desktop returned an invalid session state")
+        if not isinstance(renderer_state, str) or renderer_state not in SESSION_STATES:
+            raise RuntimeError("Plura Desktop returned an invalid renderer session state")
+        if state != "ready":
             return None
         endpoint = payload.get("endpoint")
         if not isinstance(endpoint, str) or not endpoint.startswith("ws://127.0.0.1:"):
@@ -167,20 +202,16 @@ class PluraDesktopClient:
                 or parsed_cdp.fragment
             ):
                 raise RuntimeError("Plura Desktop returned an invalid renderer CDP endpoint")
-        session = SharedSession(target.id, endpoint, raw_pid, renderer_cdp_endpoint)
-        self._session_cache[target.id] = session
-        return session
+        expected_renderer_state = "ready" if renderer_cdp_endpoint is not None else "restart-required"
+        if renderer_state != expected_renderer_state:
+            raise RuntimeError("Plura Desktop returned an inconsistent renderer session state")
+        return SharedSession(target.id, endpoint, raw_pid, renderer_cdp_endpoint)
 
     def activation_state(self, target: Target) -> str:
         return target.session_state
 
     def renderer_state(self, target: Target) -> str:
-        if target.renderer_cdp_state in SESSION_STATES:
-            return target.renderer_cdp_state
-        session = self.cached_session(target)
-        if session is not None:
-            return "ready" if session.renderer_cdp_endpoint is not None else "restart-required"
-        return target.session_state
+        return target.renderer_cdp_state
 
     def activate(self, target: Target, *, request_renderer_cdp: bool = False) -> SharedSession:
         if target.session_state == "ready":
@@ -192,20 +223,16 @@ class PluraDesktopClient:
             return session
         if target.session_state != "available":
             raise RuntimeError(target.session_state)
-        command = [str(self.control_cli), "launch-target", "--target", target.id]
+        command = ["launch-target", "--target", target.id]
         if request_renderer_cdp:
             command.append("--renderer-cdp")
-        result = subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            message = result.stderr.strip() or result.stdout.strip() or "canonical-runtime-launch-failed"
-            raise RuntimeError(message)
-        session = self.session(target, refresh=True)
+        command.append("--json")
+        payload = self._run_json(*command)
+        session = self._session_from_payload(target, payload)
         if session is None:
             raise RuntimeError("canonical-runtime-not-ready")
+        self._session_cache[target.id] = session
+        self._targets_cache = None
         return session
 
     def prepare_chat(self, target: Target, *, allow_relaunch: bool = False) -> SharedSession:
