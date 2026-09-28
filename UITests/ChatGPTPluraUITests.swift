@@ -25,7 +25,12 @@ final class ChatGPTPluraUITests: XCTestCase {
         XCTAssertTrue(app.buttons["codeBlock.copy"].waitForExistence(timeout: 3))
         XCTAssertEqual(app.buttons["codeBlock.copy"].label, "Copied")
 
+        let transcript = app.collectionViews["chatTranscript"]
+        XCTAssertTrue(transcript.waitForExistence(timeout: 3))
         let activityTitle = app.staticTexts["activityCard.webSearch.title"]
+        for _ in 0..<6 where !activityTitle.exists {
+            transcript.swipeUp()
+        }
         XCTAssertTrue(activityTitle.waitForExistence(timeout: 3))
         XCTAssertEqual(activityTitle.label, "Web search")
         let activityMetadata = app.staticTexts["activityCard.webSearch.metadata"]

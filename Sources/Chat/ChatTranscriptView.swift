@@ -78,6 +78,12 @@ final class TranscriptViewController: UIViewController, UICollectionViewDataSour
         if scrollDiagnosticsEnabled {
             installScrollDiagnosticsOverlay()
         }
+
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (self: TranscriptViewController, _) in
+            self.renderCache.removeAll(keepingCapacity: true)
+            self.collectionView.collectionViewLayout.invalidateLayout()
+            self.collectionView.reloadData()
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -456,7 +462,6 @@ private final class MessageCell: UICollectionViewCell {
     private static let verticalTextInset: CGFloat = 10
     private static let verticalCellInset: CGFloat = 3
     private static let imagePreviewHeight: CGFloat = 180
-    private static let mathPreviewHeight: CGFloat = 72
     private static let contentSpacing: CGFloat = 8
 
     private let bubble = UIView()
@@ -552,11 +557,12 @@ private final class MessageCell: UICollectionViewCell {
                     imageView.configure(with: image)
                     contentStack.addArrangedSubview(imageView)
                 case .math(let math):
-                    let mathView = NativeMathView(previewHeight: Self.mathPreviewHeight)
+                    let mathHeight = NativeMathView.height(compatibleWith: traitCollection)
+                    let mathView = NativeMathView(previewHeight: mathHeight, compatibleWith: traitCollection)
                     mathView.configure(with: math)
                     contentStack.addArrangedSubview(mathView)
                 case .table(let table):
-                    let height = NativeTableBlockView.height(for: table)
+                    let height = NativeTableBlockView.height(for: table, compatibleWith: traitCollection)
                     let tableView = NativeTableBlockView(height: height)
                     tableView.configure(with: table)
                     contentStack.addArrangedSubview(tableView)
@@ -627,9 +633,9 @@ private final class MessageCell: UICollectionViewCell {
             case .image:
                 contentHeight += imagePreviewHeight
             case .math:
-                contentHeight += mathPreviewHeight
+                contentHeight += NativeMathView.height(compatibleWith: traitCollection)
             case .table(let table):
-                contentHeight += NativeTableBlockView.height(for: table)
+                contentHeight += NativeTableBlockView.height(for: table, compatibleWith: traitCollection)
             }
         }
         let spacingHeight = CGFloat(max(0, blocks.count - 1)) * contentSpacing
@@ -652,7 +658,6 @@ private final class SemanticActivityCardView: UIView {
     private static let headerSpacing: CGFloat = 8
     private static let iconSize: CGFloat = 19
     private static let imagePreviewHeight: CGFloat = 180
-    private static let mathPreviewHeight: CGFloat = 72
 
     private let stack = UIStackView()
 
@@ -758,11 +763,14 @@ private final class SemanticActivityCardView: UIView {
                 imageView.configure(with: image)
                 stack.addArrangedSubview(imageView)
             case .math(let math):
-                let mathView = NativeMathView(previewHeight: Self.mathPreviewHeight)
+                let mathHeight = NativeMathView.height(compatibleWith: traitCollection)
+                let mathView = NativeMathView(previewHeight: mathHeight, compatibleWith: traitCollection)
                 mathView.configure(with: math)
                 stack.addArrangedSubview(mathView)
             case .table(let table):
-                let tableView = NativeTableBlockView(height: NativeTableBlockView.height(for: table))
+                let tableView = NativeTableBlockView(
+                    height: NativeTableBlockView.height(for: table, compatibleWith: traitCollection)
+                )
                 tableView.configure(with: table)
                 stack.addArrangedSubview(tableView)
             }
@@ -816,9 +824,9 @@ private final class SemanticActivityCardView: UIView {
             case .image:
                 contentHeight += imagePreviewHeight
             case .math:
-                contentHeight += mathPreviewHeight
+                contentHeight += NativeMathView.height(compatibleWith: traitCollection)
             case .table(let table):
-                contentHeight += NativeTableBlockView.height(for: table)
+                contentHeight += NativeTableBlockView.height(for: table, compatibleWith: traitCollection)
             }
             arrangedCount += 1
         }
@@ -881,7 +889,6 @@ private final class SemanticActivityCardView: UIView {
 }
 
 private final class NativeTableBlockView: UIScrollView {
-    private static let rowHeight: CGFloat = 42
     private static let maximumVisibleRows = 7
     private static let cellWidth: CGFloat = 132
 
@@ -933,7 +940,9 @@ private final class NativeTableBlockView: UIScrollView {
             rowStack.alignment = .fill
             rowStack.distribution = .fill
             rowStack.spacing = 0
-            rowStack.heightAnchor.constraint(equalToConstant: Self.rowHeight).isActive = true
+            rowStack.heightAnchor.constraint(
+                equalToConstant: Self.rowHeight(compatibleWith: traitCollection)
+            ).isActive = true
 
             for columnIndex in 0..<columns {
                 let label = UILabel()
@@ -964,9 +973,14 @@ private final class NativeTableBlockView: UIScrollView {
         }
     }
 
-    static func height(for table: MarkdownTable) -> CGFloat {
+    static func height(for table: MarkdownTable, compatibleWith traitCollection: UITraitCollection) -> CGFloat {
         let visibleRows = min(max(1, table.rows.count), maximumVisibleRows)
-        return CGFloat(visibleRows) * rowHeight
+        return CGFloat(visibleRows) * rowHeight(compatibleWith: traitCollection)
+    }
+
+    private static func rowHeight(compatibleWith traitCollection: UITraitCollection) -> CGFloat {
+        let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+        return max(42, ceil(font.lineHeight * 2 + 12))
     }
 }
 
@@ -1097,13 +1111,16 @@ private final class NativeCodeBlockView: UIView {
 private final class NativeMathView: UIView {
     private let mathLabel = MTMathUILabel()
 
-    init(previewHeight: CGFloat) {
+    init(previewHeight: CGFloat, compatibleWith traitCollection: UITraitCollection) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(equalToConstant: previewHeight).isActive = true
 
         mathLabel.translatesAutoresizingMaskIntoConstraints = false
-        mathLabel.fontSize = 20
+        mathLabel.fontSize = UIFont.preferredFont(
+            forTextStyle: .title3,
+            compatibleWith: traitCollection
+        ).pointSize
         mathLabel.textColor = .label
         mathLabel.textAlignment = .center
         mathLabel.mode = .display
@@ -1126,6 +1143,11 @@ private final class NativeMathView: UIView {
         mathLabel.latex = math.latex
         accessibilityLabel = math.latex
         isAccessibilityElement = true
+    }
+
+    static func height(compatibleWith traitCollection: UITraitCollection) -> CGFloat {
+        let font = UIFont.preferredFont(forTextStyle: .title3, compatibleWith: traitCollection)
+        return max(72, ceil(font.lineHeight * 2.4))
     }
 }
 

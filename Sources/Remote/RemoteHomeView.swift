@@ -33,6 +33,10 @@ struct RemoteHomeView: View {
     }
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var composerControlSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .body) private var libraryIconSize: CGFloat = 30
+    @ScaledMetric(relativeTo: .caption) private var statusDotSize: CGFloat = 7
     @State private var store = RemoteCodexStore()
     @AppStorage("codexRemote.surface") private var surfaceRawValue = Surface.chat.rawValue
     @State private var showsSidebar = false
@@ -142,7 +146,7 @@ struct RemoteHomeView: View {
         ToolbarItem(placement: .topBarLeading) {
             if store.showingThreadList {
                 Button {
-                    withAnimation(.easeOut(duration: 0.18)) { showsSidebar = true }
+                    showsSidebar = true
                 } label: {
                     Image(systemName: "line.3.horizontal")
                 }
@@ -161,6 +165,19 @@ struct RemoteHomeView: View {
                 if surface == .codex {
                     Text("Codex")
                         .font(.headline)
+                } else if dynamicTypeSize.isAccessibilitySize {
+                    Menu {
+                        Button { selectSurface(.chat) } label: {
+                            Label("Chat", systemImage: surface == .chat ? "checkmark" : Surface.chat.icon)
+                        }
+                        Button { selectSurface(.work) } label: {
+                            Label("Work", systemImage: surface == .work ? "checkmark" : Surface.work.icon)
+                        }
+                    } label: {
+                        Label(surface.rawValue, systemImage: surface.icon)
+                            .font(.headline)
+                    }
+                    .accessibilityIdentifier("pluraSurfacePicker")
                 } else {
                     Picker("Mode", selection: surfaceBinding) {
                         Text("Chat").tag(Surface.chat)
@@ -188,7 +205,7 @@ struct RemoteHomeView: View {
         ToolbarItem(placement: .topBarTrailing) {
             if store.showingThreadList {
                 Button {
-                    withAnimation(.easeOut(duration: 0.18)) { isSearching.toggle() }
+                    isSearching.toggle()
                 } label: {
                     Image(systemName: isSearching ? "xmark" : "magnifyingglass")
                 }
@@ -248,7 +265,7 @@ struct RemoteHomeView: View {
             profileMenu
         } else {
             HStack(spacing: 7) {
-                Circle().fill(store.statusColor).frame(width: 7, height: 7)
+                Circle().fill(store.statusColor).frame(width: statusDotSize, height: statusDotSize)
                 Text(store.selectedTargetPresentationName ?? (store.hasSavedPairing ? "ChatGPT" : "Set up Mac"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
@@ -315,7 +332,7 @@ struct RemoteHomeView: View {
             }
         } label: {
             HStack(spacing: 7) {
-                Circle().fill(store.statusColor).frame(width: 7, height: 7)
+                Circle().fill(store.statusColor).frame(width: statusDotSize, height: statusDotSize)
                 Text(store.selectedTargetPresentationName ?? (store.hasSavedPairing ? "Mac profile" : "Set up Mac"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
@@ -385,7 +402,7 @@ struct RemoteHomeView: View {
                     .frame(width: 20)
             } else {
                 Image(systemName: systemName)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
             }
@@ -397,7 +414,7 @@ struct RemoteHomeView: View {
                 Text(detail)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
@@ -705,9 +722,10 @@ struct RemoteHomeView: View {
                 modelMenuContents
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 34, height: 34)
+                    .font(.body.weight(.medium))
+                    .frame(width: composerControlSize, height: composerControlSize)
             }
+            .frame(minWidth: 44, minHeight: 44)
             .disabled(!store.canSwitchThreads)
 
             TextField(surface.composerPlaceholder, text: $store.draft, axis: .vertical)
@@ -718,13 +736,13 @@ struct RemoteHomeView: View {
 
             Button(action: store.startNewThreadFromDraft) {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(
                         store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             ? Color.secondary
                             : Color.white
                     )
-                    .frame(width: 34, height: 34)
+                    .frame(width: composerControlSize, height: composerControlSize)
                     .background(
                         store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             ? Color(uiColor: .tertiarySystemFill)
@@ -732,6 +750,7 @@ struct RemoteHomeView: View {
                         in: Circle()
                     )
             }
+            .frame(minWidth: 44, minHeight: 44)
             .disabled(store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.canSwitchThreads)
         }
         .padding(.horizontal, 12)
@@ -760,9 +779,9 @@ struct RemoteHomeView: View {
 
     private func libraryRowIcon(systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.body.weight(.semibold))
             .foregroundStyle(.secondary)
-            .frame(width: 30, height: 30)
+            .frame(width: libraryIconSize, height: libraryIconSize)
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
@@ -772,7 +791,7 @@ struct RemoteHomeView: View {
                 HStack(alignment: .top, spacing: 12) {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(.quaternary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: libraryIconSize, height: libraryIconSize)
                     VStack(alignment: .leading, spacing: 8) {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(.quaternary)
@@ -794,7 +813,7 @@ struct RemoteHomeView: View {
             modelMenuContents
         } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 17, weight: .medium))
+                .font(.body.weight(.medium))
         }
         .disabled(!store.canSwitchThreads)
         .accessibilityLabel("Model settings")
@@ -984,9 +1003,10 @@ struct RemoteHomeView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
-                    .frame(width: 28, height: 28)
+                    .frame(width: composerControlSize, height: composerControlSize)
                     .contentShape(Rectangle())
             }
+            .frame(minWidth: 44, minHeight: 44)
             .buttonStyle(.plain)
             .disabled(store.isLoadingCloudTranscript)
             .accessibilityLabel("Refresh Desktop chat")
@@ -1067,10 +1087,11 @@ struct RemoteHomeView: View {
                         }
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 34, height: 34)
+                            .font(.title3.weight(.medium))
+                            .frame(width: composerControlSize, height: composerControlSize)
                             .background(Color(uiColor: .tertiarySystemFill), in: Circle())
                     }
+                    .frame(minWidth: 44, minHeight: 44)
                     .disabled(!store.canStageCloudAttachment)
                     .accessibilityLabel("Add attachment")
                 }
@@ -1089,16 +1110,17 @@ struct RemoteHomeView: View {
                                 .tint(.white)
                         } else {
                             Image(systemName: "arrow.up")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.body.weight(.bold))
                                 .foregroundStyle(store.canSend ? .white : .secondary)
                         }
                     }
-                    .frame(width: 34, height: 34)
+                    .frame(width: composerControlSize, height: composerControlSize)
                     .background(
                         store.canSend ? Color.accentColor : Color(uiColor: .tertiarySystemFill),
                         in: Circle()
                     )
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .disabled(!store.canSend)
                 .accessibilityLabel("Send message")
             }
@@ -1118,7 +1140,7 @@ struct RemoteHomeView: View {
     private func errorNotice(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.red)
                 .padding(.top, 1)
             Text(message)
