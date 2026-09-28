@@ -575,6 +575,18 @@ final class RemoteCodexStore {
             let token = capabilityToken.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { throw RemoteHostError.missingPairingToken }
 
+            if !forceTargetDiscovery,
+               !RemoteReconnectPolicy.shouldAutomaticallyReconnect(selectedTarget),
+               let blockedTarget = selectedTarget {
+                diagnostics.record("connection.connect.userActionRequired", fields: [
+                    "targetID": blockedTarget.id,
+                    "activationState": blockedTarget.activationState.rawValue
+                ])
+                state = .failed(blockedTarget.activationDescription)
+                connectTask = nil
+                return
+            }
+
             if RemoteReconnectPolicy.canUseCachedTarget(
                 selectedTarget,
                 hasSavedPairing: hasSavedPairing,
@@ -827,7 +839,10 @@ final class RemoteCodexStore {
                 diagnostics.record("target.chatPrepare.completed", fields: [
                     "targetID": expectedTargetID
                 ])
-                connect(preservingPresentation: hasPresentationContent)
+                connect(
+                    preservingPresentation: hasPresentationContent,
+                    forceTargetDiscovery: true
+                )
             } catch {
                 guard selectedTargetID == expectedTargetID else {
                     isPreparingFastChat = false
