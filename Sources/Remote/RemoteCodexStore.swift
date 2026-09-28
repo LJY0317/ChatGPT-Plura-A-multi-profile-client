@@ -136,6 +136,7 @@ final class RemoteCodexStore {
     var userInputPrompt: RemoteUserInputPrompt?
     var mcpElicitationPrompt: RemoteMcpElicitationPrompt?
     var presentationLastSyncedAt: Date?
+    var completionNotificationsEnabled = false
 
     private var wasBackgrounded = false
     private var sceneIsActive = true
@@ -186,9 +187,23 @@ final class RemoteCodexStore {
     let diagnostics = RemoteDiagnostics.shared
     let hostClient = RemoteHostClient()
     private let codexClient = CodexAppServerClient()
+    private let completionNotifier = RemoteCompletionNotifier()
 
     init() {
+        completionNotificationsEnabled = completionNotifier.isEnabled
         restorePresentationSnapshotOnLaunch()
+    }
+
+    func setCompletionNotificationsEnabled(_ enabled: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let accepted = await completionNotifier.setEnabled(enabled)
+            completionNotificationsEnabled = accepted
+            diagnostics.record("notifications.completion.preferenceChanged", fields: [
+                "requested": enabled,
+                "enabled": accepted
+            ])
+        }
     }
 
     var diagnosticsURL: URL { diagnostics.fileURL }
@@ -1674,6 +1689,7 @@ final class RemoteCodexStore {
                 "assistantLength": finalLength,
                 "paramKeys": params.keys.sorted()
             ])
+            completionNotifier.notifyTurnCompleted(wasBackgrounded: wasBackgrounded)
             activeAssistantMessageID = nil
             state = .ready
             schedulePresentationSnapshotSave()

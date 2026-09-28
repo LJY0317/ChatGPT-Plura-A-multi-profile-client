@@ -1236,6 +1236,21 @@ struct RemoteHomeView: View {
                 }
 
                 Section {
+                    Toggle(
+                        "Completion notifications",
+                        isOn: Binding(
+                            get: { store.completionNotificationsEnabled },
+                            set: { store.setCompletionNotificationsEnabled($0) }
+                        )
+                    )
+                    .accessibilityIdentifier("settings.completionNotifications")
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("Notify when a Work/Codex turn finishes after you leave Plura. This is event-driven and does not keep a polling loop running in the background.")
+                }
+
+                Section {
                     if !store.hasSavedPairing {
                         TextField("ws://Mac-IP:8765", text: $store.serverURL)
                             .textInputAutocapitalization(.never)

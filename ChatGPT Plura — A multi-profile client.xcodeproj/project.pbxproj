@@ -12,6 +12,7 @@
 		283A13D6450E7E8689A85849 /* RemoteHostClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5788A3F5B2B5138B8F620EDE /* RemoteHostClient.swift */; };
 		2BF8AAB2739D76E8CAB9A248 /* RemoteWebSocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D1688B53A1FAA73CD6F0D2 /* RemoteWebSocketTransport.swift */; };
 		30D7DF36330AB90FA9666498 /* RemoteCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5561E110A633D08F6E593B26 /* RemoteCredentialStore.swift */; };
+		4F52C7DDF43D77082317EB68 /* RemoteCompletionNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E35E4E8A3D78F7CF37D6294 /* RemoteCompletionNotifier.swift */; };
 		581CDA141CCE2BE6DF0F7A51 /* iosMath in Frameworks */ = {isa = PBXBuildFile; productRef = 4F9F3DA355CA5725C0DE1ABF /* iosMath */; };
 		5836F5734D92513A92465091 /* RemoteCodexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1BCC0F8F61DB10212DF3A6F /* RemoteCodexStore.swift */; };
 		59EA824F0E16F71586B2FA5C /* ChatTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4B710343021717751B334C /* ChatTranscriptView.swift */; };
@@ -51,6 +52,7 @@
 		0159CD25C3C26ECE90656F93 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		11248F135CDEEC5FF97AC10F /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		15BCF6BB3A0F330BD37022DB /* CodexAppServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexAppServerClient.swift; sourceTree = "<group>"; };
+		2E35E4E8A3D78F7CF37D6294 /* RemoteCompletionNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompletionNotifier.swift; sourceTree = "<group>"; };
 		4D85A1FACE74AF0014FA9FDA /* RemoteDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnostics.swift; sourceTree = "<group>"; };
 		5561E110A633D08F6E593B26 /* RemoteCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCredentialStore.swift; sourceTree = "<group>"; };
 		5788A3F5B2B5138B8F620EDE /* RemoteHostClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteHostClient.swift; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 			children = (
 				15BCF6BB3A0F330BD37022DB /* CodexAppServerClient.swift */,
 				D1BCC0F8F61DB10212DF3A6F /* RemoteCodexStore.swift */,
+				2E35E4E8A3D78F7CF37D6294 /* RemoteCompletionNotifier.swift */,
 				5561E110A633D08F6E593B26 /* RemoteCredentialStore.swift */,
 				4D85A1FACE74AF0014FA9FDA /* RemoteDiagnostics.swift */,
 				CD07F85C6AFE40A9B69085DD /* RemoteHomeView.swift */,
@@ -303,6 +306,7 @@
 				59EA824F0E16F71586B2FA5C /* ChatTranscriptView.swift in Sources */,
 				7BBB23F08B85B2A1FA3EE78F /* CodexAppServerClient.swift in Sources */,
 				5836F5734D92513A92465091 /* RemoteCodexStore.swift in Sources */,
+				4F52C7DDF43D77082317EB68 /* RemoteCompletionNotifier.swift in Sources */,
 				30D7DF36330AB90FA9666498 /* RemoteCredentialStore.swift in Sources */,
 				9188A892F327CD115E3062B0 /* RemoteDiagnostics.swift in Sources */,
 				AE9C51801C32E767894836D1 /* RemoteHomeView.swift in Sources */,

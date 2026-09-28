@@ -217,6 +217,27 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         XCTAssertEqual(transcript.capabilities?.attachments, false)
     }
 
+    func testCompletionNotificationPolicyOnlyNotifiesAfterBackgrounding() {
+        XCTAssertFalse(
+            RemoteCompletionNotificationPolicy.shouldNotify(
+                isEnabled: false,
+                wasBackgrounded: true
+            )
+        )
+        XCTAssertFalse(
+            RemoteCompletionNotificationPolicy.shouldNotify(
+                isEnabled: true,
+                wasBackgrounded: false
+            )
+        )
+        XCTAssertTrue(
+            RemoteCompletionNotificationPolicy.shouldNotify(
+                isEnabled: true,
+                wasBackgrounded: true
+            )
+        )
+    }
+
     func testChatTranscriptKeepsMessagesWhenSemanticItemsAreAbsent() throws {
         let data = Data(#"""
         {

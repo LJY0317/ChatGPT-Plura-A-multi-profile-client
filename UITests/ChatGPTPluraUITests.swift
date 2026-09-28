@@ -133,6 +133,12 @@ final class ChatGPTPluraUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Connection"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Done"].exists)
 
+        let completionNotifications = app.switches["settings.completionNotifications"]
+        for _ in 0..<3 where !completionNotifications.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(completionNotifications.waitForExistence(timeout: 3))
+
         let clearLog = app.buttons["Clear Remote Log"].firstMatch
         for _ in 0..<4 where !clearLog.exists {
             app.swipeUp()

@@ -121,6 +121,12 @@ The mobile client uses stale-while-revalidate behavior:
 
 Conversation caches are bounded per target and must be evicted by recency/size. Credentials, pending write transactions, and staged attachment IDs are never persisted as presentation cache.
 
+## Completion notifications
+
+Completion notification policy is event-driven. The iOS client may schedule a generic local notification only when the user has explicitly enabled notifications, the app has entered the background, and the canonical Work/Codex stream delivers `turn/completed`. Transient inactive states such as system overlays do not qualify. The notification deliberately omits task, thread, and message contents so lock-screen delivery does not expand Plura's data exposure.
+
+This local path does not keep a polling socket or background timer alive. It is therefore best-effort once iOS suspends the app. A future APNs/relay delivery implementation should feed the same semantic completion boundary rather than introduce a second writer or a persistent polling architecture.
+
 ## Native UI boundary
 
 iOS uses SwiftUI/UIKit and Android should use native Android/Compose conventions. UI source code is not the cross-platform boundary. The shared boundary is:
