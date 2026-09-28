@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible non-security bug in Plura Mobile or Plura Host.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not include credentials, pairing tokens, ChatGPT session data, private filesystem paths, or other personal information. Security-sensitive reports belong in the repository's private vulnerability reporting flow described in SECURITY.md.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Plura Mobile (iOS)
+        - Plura Host (macOS)
+        - Shared Host / protocol behavior
+        - Documentation / installation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest reliable sequence that reproduces the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: e.g. main @ abc1234
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS/device information that is relevant to the issue. Do not include serial numbers or other unique identifiers.
+      placeholder: e.g. macOS 27, iOS 27 simulator
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or screenshots
+      description: Optional. Remove credentials, tokens, account data, private paths, and unrelated personal content first.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety confirmation
+      options:
+        - label: I removed credentials, tokens, session data, private paths, and unrelated personal information from this report.
+          required: true
+        - label: This is not a security vulnerability or credential-exposure report.
+          required: true
