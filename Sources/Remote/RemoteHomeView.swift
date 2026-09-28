@@ -150,7 +150,7 @@ struct RemoteHomeView: View {
 
     private var primaryContent: some View {
         VStack(spacing: 0) {
-            if store.showingThreadList {
+            if store.showingThreadList, showsListContextHeader {
                 listContextHeader
             }
             connectionBanner
@@ -190,7 +190,10 @@ struct RemoteHomeView: View {
 
         ToolbarItem(placement: .principal) {
             if store.showingThreadList {
-                if surface == .codex {
+                if horizontalSizeClass == .regular {
+                    Label(surface.rawValue, systemImage: surface.icon)
+                        .font(.headline)
+                } else if surface == .codex {
                     Text("Codex")
                         .font(.headline)
                 } else if dynamicTypeSize.isAccessibilitySize {
@@ -250,9 +253,16 @@ struct RemoteHomeView: View {
         }
     }
 
+    private var showsListContextHeader: Bool {
+        horizontalSizeClass != .regular
+            || (surface == .chat && store.selectedTarget?.chatMirrorNeedsRelaunch == true)
+    }
+
     private var listContextHeader: some View {
         VStack(spacing: 8) {
-            targetChrome
+            if horizontalSizeClass != .regular {
+                targetChrome
+            }
             if surface == .chat, store.selectedTarget?.chatMirrorNeedsRelaunch == true {
                 HStack(spacing: 8) {
                     Image(systemName: "bolt.horizontal.circle")
