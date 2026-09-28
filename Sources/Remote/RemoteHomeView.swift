@@ -1031,34 +1031,29 @@ struct RemoteHomeView: View {
     }
 
     private var cloudMirrorBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if store.isLoadingCloudTranscript {
                 ProgressView().controlSize(.small)
             } else {
-                Image(systemName: store.cloudChatActivity == "streaming" ? "ellipsis.message" : "checkmark.circle")
-                    .foregroundStyle(store.cloudChatActivity == "streaming" ? .orange : .secondary)
+                Image(systemName: "checkmark.circle")
+                    .foregroundStyle(.secondary)
             }
-            Text(store.statusText)
+            Text(cloudMirrorStatusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Button {
-                store.refreshActiveCloudChat()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: composerControlSize, height: composerControlSize)
-                    .contentShape(Rectangle())
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .buttonStyle(.plain)
-            .disabled(store.isLoadingCloudTranscript)
-            .accessibilityLabel("Refresh Desktop chat")
+                .lineLimit(2)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+        .padding(.horizontal, 2)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var cloudMirrorStatusText: String {
+        if store.isLoadingCloudTranscript {
+            return store.messages.isEmpty ? "Loading Desktop mirror…" : "Refreshing Desktop mirror…"
+        }
+        return store.cloudChatIsPartial ? "Desktop mirror · visible messages" : "Desktop mirror"
     }
 
     private var remoteComposer: some View {
