@@ -2245,16 +2245,19 @@ final class RemoteCodexStore {
             refreshModels()
             refreshThreads()
             refreshChatCatalog()
-            if preservePresentationOnNextConnect,
-               isCloudChatMirror,
-               let activeCloudCatalogEntry
-            {
+            if RemotePresentationResumePolicy.shouldResumeCloudConversation(
+                preservingPresentation: preservePresentationOnNextConnect,
+                showingThreadList: showingThreadList,
+                isCloudChatMirror: isCloudChatMirror,
+                hasActiveConversation: activeCloudCatalogEntry != nil
+            ), let activeCloudCatalogEntry {
                 showingThreadList = false
                 openCloudChatMirror(activeCloudCatalogEntry, isRefresh: true)
-            } else if preservePresentationOnNextConnect,
-               !showingThreadList,
-               let threadID
-            {
+            } else if RemotePresentationResumePolicy.shouldResumeNativeThread(
+                preservingPresentation: preservePresentationOnNextConnect,
+                showingThreadList: showingThreadList,
+                hasThreadID: threadID != nil
+            ), let threadID {
                 sendRequest(
                     method: "thread/read",
                     params: ["threadId": threadID, "includeTurns": false],

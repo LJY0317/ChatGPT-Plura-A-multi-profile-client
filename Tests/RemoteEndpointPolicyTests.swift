@@ -186,6 +186,42 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         )
     }
 
+    func testPresentationResumeKeepsConversationListOpenAcrossReconnect() {
+        XCTAssertFalse(
+            RemotePresentationResumePolicy.shouldResumeCloudConversation(
+                preservingPresentation: true,
+                showingThreadList: true,
+                isCloudChatMirror: true,
+                hasActiveConversation: true
+            )
+        )
+        XCTAssertFalse(
+            RemotePresentationResumePolicy.shouldResumeNativeThread(
+                preservingPresentation: true,
+                showingThreadList: true,
+                hasThreadID: true
+            )
+        )
+    }
+
+    func testPresentationResumeReopensConversationOnlyWhenItWasVisible() {
+        XCTAssertTrue(
+            RemotePresentationResumePolicy.shouldResumeCloudConversation(
+                preservingPresentation: true,
+                showingThreadList: false,
+                isCloudChatMirror: true,
+                hasActiveConversation: true
+            )
+        )
+        XCTAssertTrue(
+            RemotePresentationResumePolicy.shouldResumeNativeThread(
+                preservingPresentation: true,
+                showingThreadList: false,
+                hasThreadID: true
+            )
+        )
+    }
+
     func testChatTranscriptDecodesOptionalSemanticTimelineItems() throws {
         let data = Data(#"""
         {

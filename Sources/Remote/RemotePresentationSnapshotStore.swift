@@ -1,5 +1,29 @@
 import Foundation
 
+enum RemotePresentationResumePolicy {
+    static func shouldResumeCloudConversation(
+        preservingPresentation: Bool,
+        showingThreadList: Bool,
+        isCloudChatMirror: Bool,
+        hasActiveConversation: Bool
+    ) -> Bool {
+        preservingPresentation
+            && !showingThreadList
+            && isCloudChatMirror
+            && hasActiveConversation
+    }
+
+    static func shouldResumeNativeThread(
+        preservingPresentation: Bool,
+        showingThreadList: Bool,
+        hasThreadID: Bool
+    ) -> Bool {
+        preservingPresentation
+            && !showingThreadList
+            && hasThreadID
+    }
+}
+
 struct RemotePresentationSnapshot: Codable, Equatable {
     static let currentVersion = 1
     static let maximumTargets = 16
