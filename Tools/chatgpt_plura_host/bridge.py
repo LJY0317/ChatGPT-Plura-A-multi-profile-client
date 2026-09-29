@@ -17,7 +17,7 @@ from .attachments import (
     MAX_CHAT_ATTACHMENTS_PER_MESSAGE,
     StagedChatAttachment,
 )
-from .plura_desktop import Target, TargetRuntime
+from .plura_desktop import ChatPreparationError, Target, TargetRuntime
 from .network import ConnectionEndpoint
 
 
@@ -352,6 +352,24 @@ class BridgeServer:
                             target,
                             allow_relaunch=allow_relaunch,
                         )
+                    except ChatPreparationError as error:
+                        payload: dict[str, object] = {
+                            "error": error.reason,
+                            "stage": error.stage,
+                        }
+                        if error.state_after_quit is not None:
+                            payload["stateAfterQuit"] = error.state_after_quit
+                        if error.cause_code is not None:
+                            payload["cause"] = error.cause_code
+                        control_version = getattr(self.runtime, "control_version", lambda: None)()
+                        if isinstance(control_version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", control_version):
+                            payload["controlVersion"] = control_version
+                        await send_response(
+                            writer,
+                            "503 Service Unavailable",
+                            body=json.dumps(payload, sort_keys=True).encode("utf-8"),
+                        )
+                        return
                     except RuntimeError as error:
                         reason = str(error).strip() or "chat-mirror-unavailable"
                         if not re.fullmatch(r"[a-z0-9-]{1,96}", reason):

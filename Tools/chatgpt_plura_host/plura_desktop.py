@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -33,6 +34,24 @@ class SharedSession:
     endpoint: str
     desktop_process_id: int | None = None
     renderer_cdp_endpoint: str | None = None
+
+
+class ChatPreparationError(RuntimeError):
+    """Stable, privacy-safe failure metadata for explicit Chat relaunch work."""
+
+    def __init__(
+        self,
+        reason: str,
+        stage: str,
+        *,
+        state_after_quit: str | None = None,
+        cause_code: str | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.stage = stage
+        self.state_after_quit = state_after_quit
+        self.cause_code = cause_code
 
 
 class TargetRuntime(Protocol):
@@ -65,6 +84,25 @@ class PluraDesktopClient:
         self.control_cli = control_cli
         self._targets_cache: list[Target] | None = None
         self._session_cache: dict[str, SharedSession] = {}
+        self._control_version: str | None = None
+
+    def control_version(self) -> str | None:
+        if self._control_version is not None:
+            return self._control_version
+        if not self.control_cli.is_file():
+            return None
+        result = subprocess.run(
+            [str(self.control_cli), "--version"],
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return None
+        match = re.fullmatch(r"Plura Desktop ([0-9]+\.[0-9]+\.[0-9]+)", result.stdout.strip())
+        if match is None:
+            return None
+        self._control_version = match.group(1)
+        return self._control_version
 
     def _run_json(self, *arguments: str) -> dict[str, object]:
         if not self.control_cli.is_file():
@@ -258,14 +296,51 @@ class PluraDesktopClient:
         if state == "restart-required":
             if not allow_relaunch:
                 raise RuntimeError("chat-relaunch-required")
-            self._run_json("quit-target", "--target", target.id, "--json")
-            refreshed = next(
-                (candidate for candidate in self.targets(refresh=True) if candidate.id == target.id),
-                None,
-            )
+            try:
+                quit_payload = self._run_json("quit-target", "--target", target.id, "--json")
+            except RuntimeError as error:
+                raise ChatPreparationError(
+                    "chat-relaunch-quit-failed",
+                    "quit",
+                    cause_code=_safe_runtime_reason(error),
+                ) from error
+            state_after_quit = quit_payload.get("state")
+            if not isinstance(state_after_quit, str) or state_after_quit not in SESSION_STATES:
+                state_after_quit = None
+            try:
+                refreshed = next(
+                    (candidate for candidate in self.targets(refresh=True) if candidate.id == target.id),
+                    None,
+                )
+            except RuntimeError as error:
+                raise ChatPreparationError(
+                    "chat-relaunch-refresh-failed",
+                    "refresh-after-quit",
+                    state_after_quit=state_after_quit,
+                    cause_code=_safe_runtime_reason(error),
+                ) from error
             if refreshed is None:
-                raise RuntimeError("target-disappeared")
-            return self.activate(refreshed, request_renderer_cdp=True)
+                raise ChatPreparationError(
+                    "target-disappeared",
+                    "refresh-after-quit",
+                    state_after_quit=state_after_quit,
+                )
+            try:
+                return self.activate(refreshed, request_renderer_cdp=True)
+            except RuntimeError as error:
+                raise ChatPreparationError(
+                    "chat-relaunch-launch-failed",
+                    "launch",
+                    state_after_quit=state_after_quit,
+                    cause_code=_safe_runtime_reason(error),
+                ) from error
         if state in {"unsupported", "unavailable"}:
             raise RuntimeError(state)
         raise RuntimeError("chat-mirror-unavailable")
+
+
+def _safe_runtime_reason(error: BaseException) -> str | None:
+    reason = str(error).strip()
+    if re.fullmatch(r"[a-z0-9-]{1,96}", reason):
+        return reason
+    return None

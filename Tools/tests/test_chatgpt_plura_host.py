@@ -23,7 +23,7 @@ sys.path.insert(0, str(TOOLS))
 from chatgpt_plura_host.bridge import BridgeServer, PairingState
 from chatgpt_plura_host.attachments import ChatAttachmentStore
 from chatgpt_plura_host.catalog import _read_catalog
-from chatgpt_plura_host.plura_desktop import PluraDesktopClient, SharedSession, Target
+from chatgpt_plura_host.plura_desktop import ChatPreparationError, PluraDesktopClient, SharedSession, Target
 from chatgpt_plura_host.network import (
     ConnectionEndpoint,
     _tailscale_endpoints_from_status,
@@ -886,6 +886,31 @@ en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500
         self.assertEqual(client.events[1], ("targets", True))
         self.assertEqual(client.events[2], ("activate", "default", True))
 
+    def test_chat_prepare_reports_structured_relaunch_stage_failure(self):
+        target = Target(
+            "default",
+            "ChatGPT",
+            "ready",
+            "restart-required",
+            "default",
+        )
+
+        class FakeClient(PluraDesktopClient):
+            def __init__(self):
+                pass
+
+            def renderer_state(self, candidate):
+                return candidate.renderer_cdp_state
+
+            def _run_json(self, *arguments):
+                raise RuntimeError("Target did not become relaunchable after desktop quit: default")
+
+        with self.assertRaises(ChatPreparationError) as captured:
+            FakeClient().prepare_chat(target, allow_relaunch=True)
+        self.assertEqual(captured.exception.reason, "chat-relaunch-quit-failed")
+        self.assertEqual(captured.exception.stage, "quit")
+        self.assertIsNone(captured.exception.cause_code)
+
     def test_renderer_result_preserves_complete_semantic_timeline(self):
         payload = _normalize_renderer_transcript_result({
             "messages": [
@@ -1199,6 +1224,36 @@ class BridgeHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(calls, [("default", True)])
         self.assertEqual(json.loads(body)["chatMirrorState"], "ready")
+
+    async def test_chat_prepare_surfaces_structured_relaunch_failure_metadata(self):
+        def prepare_chat(target, *, allow_relaunch=False):
+            raise ChatPreparationError(
+                "chat-relaunch-launch-failed",
+                "launch",
+                state_after_quit="available",
+                cause_code="canonical-runtime-not-ready",
+            )
+
+        self.multi.prepare_chat = prepare_chat
+        self.multi.control_version = lambda: "0.1.15"
+        route = self.multi.targets()[0].route_key
+        status, body = await self.request(
+            f"/targets/{route}/chat-prepare",
+            "Bearer capability",
+            method="POST",
+            body={"allowRelaunch": True},
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(
+            json.loads(body),
+            {
+                "cause": "canonical-runtime-not-ready",
+                "controlVersion": "0.1.15",
+                "error": "chat-relaunch-launch-failed",
+                "stage": "launch",
+                "stateAfterQuit": "available",
+            },
+        )
 
     async def test_pairing_endpoint_is_one_use(self):
         with tempfile.TemporaryDirectory() as temp:

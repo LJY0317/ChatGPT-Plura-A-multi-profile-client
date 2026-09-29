@@ -222,6 +222,17 @@ final class RemoteEndpointPolicyTests: XCTestCase {
         )
     }
 
+    func testRelaunchFailureMessagesDistinguishQuitAndLaunchStages() {
+        XCTAssertEqual(
+            RemoteHostError.httpStatus(503, "chat-relaunch-quit-failed").errorDescription,
+            "ChatGPT did not finish quitting cleanly for relaunch. Try Relaunch again after the desktop window fully closes."
+        )
+        XCTAssertEqual(
+            RemoteHostError.httpStatus(503, "chat-relaunch-launch-failed").errorDescription,
+            "ChatGPT quit, but Plura Desktop could not start the profile again. Check the Mac and retry Relaunch."
+        )
+    }
+
     func testChatTranscriptDecodesOptionalSemanticTimelineItems() throws {
         let data = Data(#"""
         {

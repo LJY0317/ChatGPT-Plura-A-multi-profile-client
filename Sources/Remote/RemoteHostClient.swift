@@ -211,6 +211,10 @@ private struct RemoteTargetsResponse: Decodable {
 
 private struct RemoteActivationError: Decodable {
     let error: String
+    let stage: String?
+    let controlVersion: String?
+    let stateAfterQuit: String?
+    let cause: String?
 }
 
 enum RemoteHostError: LocalizedError, Sendable {
@@ -267,6 +271,9 @@ enum RemoteHostError: LocalizedError, Sendable {
         case .httpStatus(503, let reason):
             switch reason {
             case "host-unreachable": "Your Mac is not reachable on any saved private-network path right now."
+            case "chat-relaunch-quit-failed": "ChatGPT did not finish quitting cleanly for relaunch. Try Relaunch again after the desktop window fully closes."
+            case "chat-relaunch-refresh-failed": "ChatGPT quit, but Plura Desktop could not confirm that the profile was ready to relaunch."
+            case "chat-relaunch-launch-failed": "ChatGPT quit, but Plura Desktop could not start the profile again. Check the Mac and retry Relaunch."
             case "desktop-renderer-unavailable": "ChatGPT Desktop's renderer connection is not available right now."
             case "desktop-renderer-timeout": "ChatGPT Desktop's renderer took too long to respond."
             case "desktop-renderer-failed": "ChatGPT Desktop's renderer could not expose this conversation right now."
@@ -578,6 +585,7 @@ struct RemoteHostClient: Sendable {
         token: String,
         allowTrustedOverlayPlaintext: Bool = false
     ) async throws {
+        let startedAt = Date()
         let routeRoot = target.route.replacingOccurrences(of: "/ws", with: "")
         let url = try httpURL(
             baseURL: baseURL,
@@ -593,10 +601,27 @@ struct RemoteHostClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(try normalizedToken(token))", forHTTPHeaderField: "Authorization")
         let (data, response) = try await ephemeralSession().data(for: request)
-        try validate(response: response, data: data)
+        guard let http = response as? HTTPURLResponse else {
+            throw RemoteHostError.invalidBaseURL
+        }
+        if !(200..<300).contains(http.statusCode) {
+            let failure = try? JSONDecoder().decode(RemoteActivationError.self, from: data)
+            diagnostics.record("target.chatPrepare.responseFailed", level: .warning, fields: [
+                "targetID": target.id,
+                "status": http.statusCode,
+                "reason": failure?.error ?? "",
+                "stage": failure?.stage ?? "",
+                "controlVersion": failure?.controlVersion ?? "",
+                "stateAfterQuit": failure?.stateAfterQuit ?? "",
+                "cause": failure?.cause ?? "",
+                "durationMs": Int(Date().timeIntervalSince(startedAt) * 1_000)
+            ])
+            throw RemoteHostError.httpStatus(http.statusCode, failure?.error)
+        }
         diagnostics.record("target.chatPrepared", fields: [
             "targetID": target.id,
-            "allowRelaunch": allowRelaunch
+            "allowRelaunch": allowRelaunch,
+            "durationMs": Int(Date().timeIntervalSince(startedAt) * 1_000)
         ])
     }
 
