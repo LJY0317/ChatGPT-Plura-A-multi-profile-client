@@ -849,9 +849,16 @@ final class RemoteCodexStore {
                     return
                 }
                 isPreparingFastChat = false
-                state = .failed(error.localizedDescription)
                 lastError = error.localizedDescription
                 diagnostics.record("target.chatPrepare.failed", level: .warning, fields: errorFields(error))
+                diagnostics.record("target.chatPrepare.recovering", fields: [
+                    "targetID": expectedTargetID
+                ])
+                state = .disconnected
+                connect(
+                    preservingPresentation: hasPresentationContent,
+                    forceTargetDiscovery: true
+                )
             }
         }
     }
