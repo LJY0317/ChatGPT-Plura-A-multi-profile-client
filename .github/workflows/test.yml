@@ -25,6 +25,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+      - name: Local signing refresh tests
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=Tools python3 -m unittest -q Tools/test_signing_refresh.py Tools/test_refresh_diagnostics.py
       - name: Build iOS simulator app
         run: >-
           xcodebuild -project "ChatGPT Plura — A multi-profile client.xcodeproj"

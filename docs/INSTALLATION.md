@@ -79,3 +79,65 @@ The public source tree intentionally does not embed private developer signing id
 ## Windows and Linux host packaging
 
 The Plura Host common core already has Windows/Linux platform boundaries for credentials, paths, private-network discovery, and target-runtime integration, and CI exercises portable code where possible. Plura Desktop's current canonical target/session contract also carries the loopback renderer capability across its platform adapters. Production installer/service integration and the official ChatGPT Desktop launch/renderer behavior on Windows/Linux are not yet treated as proven; validate those environments on real machines while keeping the authenticated mobile protocol unchanged. Do not add OS UI-automation fallbacks or copy platform-specific path assumptions into the common core.
+
+## Local Personal Team refresh
+
+This macOS-only helper uses Apple's Xcode tools and a free Personal Team.
+Sideloadly's [refresh behavior](https://sideloadly.io/faq) is the behavioral
+reference, not a dependency. Xcode may be closed, but its signing account must
+remain registered and authenticated. Devices must be trusted, in Developer Mode,
+and reachable by USB or the configured local network.
+
+Create an owner-readable `config.json` in the support folder below:
+```json
+{"team": "YOUR_TEAM_ID", "bundle_id": "YOUR_EXISTING_BUNDLE_ID", "devices": ["DEVICE_UDID"]}
+```
+Find UDIDs with `xcrun devicectl list devices`. Reuse the installed app's exact
+team and bundle ID; never delete the device app to repair signing. Keep private
+identities and device configuration outside Git.
+
+Support folder: `~/Library/Application Support/ChatGPT Plura — A multi-profile client/SigningRefresh/`.
+
+```bash
+python3 Tools/refresh.py --update
+python3 Tools/refresh.py --enable
+python3 Tools/refresh.py --status
+python3 Tools/refresh.py --disable
+```
+
+
+The first `--update` captures current Git-tracked app source files (including local
+edits), builds and update-installs them. Scheduled runs rebuild only that registered
+snapshot, so work-in-progress changes are not deployed. Run `--update` explicitly
+to register another version. Only one source snapshot and one DerivedData tree are
+retained; replacing a version removes the old snapshot.
+
+`--enable` installs a user LaunchAgent that checks at login and four times daily.
+Jobs use macOS Background process priority and low-priority disk I/O. Both apps
+check at 00:20, 06:20, 12:20 and 18:20 to group their work. They do not request
+sleep prevention or a scheduled wake. Missed calendar checks coalesce on wake.
+There is no resident custom daemon or internal retry loop. A missed connection is
+retried on the next scheduled check, not an immediate USB-connect trigger. For
+Wi-Fi, enable Finder's “Show this iPhone/iPad when on Wi-Fi”. The Mac must be awake
+and logged in during a refresh opportunity.
+
+Refresh starts within three days of recorded installed expiry. A build alone is
+not success: the embedded profile must extend that device's recorded expiry and
+installation must succeed. A cached build can update one device while another
+remains pending. Xcode may reuse a profile; that is pending, never renewal success.
+No cached profiles or certificates are deleted to force renewal.
+
+Account/build failures notify immediately; device-connection or unchanged-profile
+warnings notify within the final day. Identical alerts are limited to one per day.
+Inspect `last-run.json` and `diagnostics.json` for failure stages and redacted
+command excerpts. Xcode's account count is only a preference hint, not credential
+validation or proof of why a login disappeared. Diagnostics never gate execution.
+
+History is limited to 30 days and 1 MiB, without an event-count cap. `last-command.log`
+keeps only a redacted 4 KiB tail; new raw command logs are not retained. All state
+is private and outside Git. Device numbers follow configuration order. `--status`
+is read-only and reports recorded installations, not a fresh device query.
+
+Use `--disable` to remove the LaunchAgent while leaving device apps untouched.
+After stopping it, delete the dedicated support folder to remove the helper's
+config, logs, source snapshot and build cache.

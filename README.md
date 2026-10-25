@@ -168,3 +168,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and test expectations. Se
 The iOS CI job also selects an available iPhone simulator dynamically and runs `ChatGPTPluraTests`; local simulator names and OS versions are intentionally not hard-coded in the project documentation.
 
 Physical-device behavior is recorded separately from simulator/CI checks.
+
+For optional macOS Personal Team automatic signing refresh, see [local refresh setup](docs/INSTALLATION.md#local-personal-team-refresh). The helper is project-owned and independent of Plura Host and other projects.
