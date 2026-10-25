@@ -12,7 +12,6 @@ final class RemoteDiagnostics: @unchecked Sendable {
     }
 
     let fileURL: URL
-    let previousFileURL: URL
 
     private let sessionID = UUID().uuidString
     private let queue = DispatchQueue(label: "io.github.LJY0317.PluraMobile.remote-diagnostics")
@@ -21,13 +20,13 @@ final class RemoteDiagnostics: @unchecked Sendable {
         category: "RemoteDiagnostics"
     )
     private let maxFileBytes = 2 * 1_024 * 1_024
+    private var nextMaintenance = Date.distantPast
     private let verboseDebugEnabled: Bool
 
     private init() {
         verboseDebugEnabled = ProcessInfo.processInfo.arguments.contains("--remote-diagnostics-verbose")
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         fileURL = documents.appendingPathComponent("remote-diagnostics.jsonl")
-        previousFileURL = documents.appendingPathComponent("remote-diagnostics.previous.jsonl")
         ensureCurrentFileExists()
 
         let info = Bundle.main.infoDictionary
@@ -66,19 +65,24 @@ final class RemoteDiagnostics: @unchecked Sendable {
         payload.append(0x0A)
         let payloadToWrite = payload
         let fileURL = fileURL
-        let previousFileURL = previousFileURL
         let maxFileBytes = maxFileBytes
         queue.async {
             let manager = FileManager.default
             let currentSize = (try? manager.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue ?? 0
             if currentSize + payloadToWrite.count > maxFileBytes {
-                try? manager.removeItem(at: previousFileURL)
+                let archive = fileURL.deletingLastPathComponent().appendingPathComponent("remote-diagnostics.\(UUID().uuidString).jsonl")
                 if manager.fileExists(atPath: fileURL.path) {
-                    try? manager.moveItem(at: fileURL, to: previousFileURL)
+                    try? manager.moveItem(at: fileURL, to: archive)
                 }
+                self.nextMaintenance = .distantPast
                 manager.createFile(atPath: fileURL.path, contents: nil)
             }
 
+            guard payloadToWrite.count <= maxFileBytes else { return }
+            if Date() >= self.nextMaintenance {
+                Self.prune(fileURL: fileURL, reserving: payloadToWrite.count)
+                self.nextMaintenance = Date().addingTimeInterval(3600)
+            }
             if let handle = try? FileHandle(forWritingTo: fileURL) {
                 defer { try? handle.close() }
                 do {
@@ -93,14 +97,36 @@ final class RemoteDiagnostics: @unchecked Sendable {
 
     func clear() {
         let fileURL = fileURL
-        let previousFileURL = previousFileURL
         queue.async {
             let manager = FileManager.default
-            try? manager.removeItem(at: previousFileURL)
-            try? manager.removeItem(at: fileURL)
+            for file in Self.logFiles(fileURL) { try? manager.removeItem(at: file) }
             manager.createFile(atPath: fileURL.path, contents: nil)
         }
         record("diagnostics.cleared")
+    }
+
+    private static func logFiles(_ current: URL) -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: current.deletingLastPathComponent(),
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])) ?? []
+        return files.filter { file in
+            let owned = file == current || (file.lastPathComponent.hasPrefix("remote-diagnostics.") && file.pathExtension == "jsonl")
+            let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            return owned && values?.isRegularFile == true && values?.isSymbolicLink != true
+        }
+    }
+
+    private static func prune(fileURL: URL, reserving: Int) {
+        let manager = FileManager.default
+        let files = logFiles(fileURL).compactMap { file -> (URL, Int, Date)? in
+            guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
+            return (file, values.fileSize ?? 0, values.contentModificationDate ?? .distantPast)
+        }
+        var bytes = reserving + (files.first { $0.0 == fileURL }?.1 ?? 0)
+        for (file, size, date) in files.filter({ $0.0 != fileURL }).sorted(by: { $0.2 > $1.2 }) {
+            if Date().timeIntervalSince(date) > 30 * 86400 || bytes + size > 8 * 1024 * 1024 {
+                try? manager.removeItem(at: file)
+            } else { bytes += size }
+        }
     }
 
     private func ensureCurrentFileExists() {
